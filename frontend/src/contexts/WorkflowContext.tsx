@@ -12,6 +12,7 @@ export interface HazardDraft {
 interface WorkflowState {
   workerId: string
   workerName: string
+  workerAccessToken: string
   permitId: string
   language: LanguageCode
   languageSelected: boolean
@@ -22,7 +23,7 @@ interface WorkflowState {
 }
 
 interface WorkflowActions {
-  setWorker: (workerId: string, workerName: string) => void
+  setWorker: (workerId: string, workerName: string, accessToken?: string) => void
   setPermit: (permitId: string) => void
   setLanguage: (language: LanguageCode) => void
   setSupervisorAuthenticated: (authenticated: boolean) => void
@@ -34,6 +35,7 @@ interface WorkflowActions {
 const initialState: WorkflowState = {
   workerId: '',
   workerName: '',
+  workerAccessToken: '',
   permitId: '',
   language: 'ta',
   languageSelected: false,
@@ -49,7 +51,7 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState(initialState)
   const value = useMemo<WorkflowState & WorkflowActions>(() => ({
     ...state,
-    setWorker: (workerId, workerName) => setState((current) => ({ ...current, workerId, workerName, permitId: '', languageSelected: false })),
+    setWorker: (workerId, workerName, workerAccessToken = '') => setState((current) => ({ ...current, workerId, workerName, workerAccessToken, permitId: '', languageSelected: false })),
     setPermit: (permitId) => setState((current) => ({ ...current, permitId, languageSelected: false })),
     setLanguage: (language) => setState((current) => ({ ...current, language, languageSelected: true })),
     setSupervisorAuthenticated: (supervisorAuthenticated) => setState((current) => ({ ...current, supervisorAuthenticated })),

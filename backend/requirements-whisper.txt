@@ -1,0 +1,3 @@
+# Optional only: the standard backend does not install or download an AI model.
+-r requirements.txt
+faster-whisper>=1.1,<2

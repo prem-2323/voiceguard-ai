@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from 'react'
+import { useCallback, useState, type FormEvent } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -10,13 +10,13 @@ import {
   FileWarning,
   Languages,
   LifeBuoy,
-  Mic,
   ShieldAlert,
-  Volume2,
 } from 'lucide-react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Badge, PageHeading, Panel, StepLabel } from '../../components/ui'
+import { VoiceCapture, VoicePlayback } from '../../components/voice/VoiceControls'
 import { useWorkflow, type LanguageCode } from '../../contexts/WorkflowContext'
+import { ApiError, loginDemo } from '../../services/api'
 
 const languageOptions: { code: LanguageCode; label: string; native: string; locale: string }[] = [
   { code: 'ta', label: 'Tamil', native: 'தமிழ்', locale: 'ta-IN' },
@@ -30,11 +30,27 @@ export function WorkerLoginPage() {
   const [workerId, setWorkerId] = useState(savedId || 'WRK-1001')
   const [workerName, setWorkerName] = useState(savedName || 'Prem Demo Worker')
   const [password, setPassword] = useState('demo123')
+  const [formError, setFormError] = useState('')
+  const [signingIn, setSigningIn] = useState(false)
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
-    setWorker(workerId.trim(), workerName.trim())
+    setFormError('')
+    setSigningIn(true)
+    try {
+      const response = await loginDemo(workerId.trim(), password)
+      if (!response.success || !response.data) throw new Error('The demo login did not return an account.')
+      setWorker(response.data.user.worker_id, response.data.user.name, response.data.access_token)
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setFormError('Check the demo worker ID and password, then try again.')
+        setSigningIn(false)
+        return
+      }
+      setWorker(workerId.trim(), workerName.trim())
+    }
     navigate('/worker/permit')
+    setSigningIn(false)
   }
 
   return (
@@ -50,8 +66,9 @@ export function WorkerLoginPage() {
           <input id="worker-name" className="text-field" value={workerName} onChange={(event) => setWorkerName(event.target.value)} required />
           <label className="field-label" htmlFor="worker-password">Demo password</label>
           <input id="worker-password" className="text-field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" />
-          <p className="field-hint">Preview only · authentication is not connected yet.</p>
-          <button className="button button-primary button-full" type="submit">Continue <ArrowRight size={17} /></button>
+          <p className="field-hint">Use the fictional demo account. Browser voice can run locally; Whisper needs a signed-in backend.</p>
+          {formError && <p className="form-error" role="alert">{formError}</p>}
+          <button className="button button-primary button-full" type="submit" disabled={signingIn}>{signingIn ? 'Signing in…' : 'Continue'} <ArrowRight size={17} /></button>
         </form>
       </Panel>
       <Link to="/" className="back-link"><ArrowLeft size={16} /> Back to workspace selection</Link>
@@ -149,7 +166,12 @@ export function WorkerHomePage() {
 
 export function BriefingPage() {
   const { language } = useWorkflow()
-  const [previewing, setPreviewing] = useState(false)
+  const voiceLocale = languageOptions.find((item) => item.code === language)?.locale ?? 'ta-IN'
+  const statusText = {
+    ta: 'அங்கீகரிக்கப்பட்ட பாதுகாப்பு உள்ளடக்கம் இன்னும் வெளியிடப்படவில்லை. இந்தத் திரையில் செயல்பாட்டு பாதுகாப்பு வழிமுறைகள் இல்லை.',
+    en: 'Approved safety content is not published yet. This screen contains no operational safety instructions.',
+    hi: 'स्वीकृत सुरक्षा सामग्री अभी प्रकाशित नहीं है। इस स्क्रीन पर काम से जुड़ी कोई सुरक्षा हिदायत नहीं है।',
+  }[language]
 
   return (
     <div className="narrow-page">
@@ -158,11 +180,7 @@ export function BriefingPage() {
       <Panel className="briefing-panel">
         <div className="briefing-panel-header"><div className="panel-icon"><BookOpenCheck size={20} /></div><div><strong>Task-specific instruction</strong><span>Language · {languageOptions.find((item) => item.code === language)?.label}</span></div><Badge tone="warning">Awaiting approval</Badge></div>
         <div className="approval-notice"><ShieldAlert size={19} /><div><strong>Approved content is not published yet.</strong><p>This preview contains no operational safety instructions. Reviewed site content will appear here when it is approved.</p></div></div>
-        <div className={`voice-preview ${previewing ? 'is-previewing' : ''}`}>
-          <button type="button" className="voice-preview-button" aria-label="Preview the listening state" onClick={() => setPreviewing((value) => !value)}><Volume2 size={20} /></button>
-          <div><strong>{previewing ? 'Speaking state preview' : 'Voice playback preview'}</strong><span>Speech output will be connected in the voice-engine phase.</span></div>
-          <span className="voice-state-dot" />
-        </div>
+        <VoicePlayback text={statusText} locale={voiceLocale} />
         <div className="briefing-footer-note">Text remains visible if speech output is unavailable.</div>
       </Panel>
       <div className="action-row"><Link className="button button-secondary" to="/worker/home"><ArrowLeft size={16} /> Home</Link><Link className="button button-primary" to="/worker/assessment">Continue <ArrowRight size={17} /></Link></div>
@@ -190,9 +208,17 @@ export function AssessmentPage() {
 
 export function HazardReportPage() {
   const navigate = useNavigate()
-  const { hazardDraft, updateHazardDraft } = useWorkflow()
-  const [voicePreview, setVoicePreview] = useState(false)
+  const { hazardDraft, updateHazardDraft, language, workerAccessToken } = useWorkflow()
   const [formError, setFormError] = useState('')
+  const voiceLocale = languageOptions.find((item) => item.code === language)?.locale ?? 'ta-IN'
+
+  const handleTranscript = useCallback((transcript: string) => {
+    const previousDescription = hazardDraft.description.trim()
+    updateHazardDraft({
+      transcript: [hazardDraft.transcript.trim(), transcript].filter(Boolean).join(' '),
+      description: [previousDescription, transcript].filter(Boolean).join(' '),
+    })
+  }, [hazardDraft.description, hazardDraft.transcript, updateHazardDraft])
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -209,11 +235,7 @@ export function HazardReportPage() {
       <StepLabel step={6} total={7} label="Report a hazard" />
       <PageHeading eyebrow="HAZARD REPORT" title="What did you notice?" description="Use voice or text. Review the details before a report is submitted." />
       <Panel className="hazard-form-panel">
-        <div className="voice-capture-preview">
-          <button type="button" className={`mic-button ${voicePreview ? 'mic-preview-active' : ''}`} aria-label="Preview voice capture state" aria-pressed={voicePreview} onClick={() => setVoicePreview((value) => !value)}><Mic size={27} /></button>
-          <div className="mic-copy"><strong>{voicePreview ? 'Listening state preview' : 'Voice capture preview'}</strong><span>{voicePreview ? 'No microphone is active in this screen preview.' : 'Voice capture will be connected in the voice-engine phase.'}</span></div>
-          <span className={`recording-indicator ${voicePreview ? 'active' : ''}`} />
-        </div>
+        <VoiceCapture locale={voiceLocale} language={language} accessToken={workerAccessToken} onTranscript={handleTranscript} />
         <div className="form-divider"><span>OR ENTER DETAILS</span></div>
         <form className="stack-form" onSubmit={handleSubmit}>
           <label className="field-label" htmlFor="hazard-category">Hazard category</label>
@@ -233,15 +255,18 @@ export function HazardReportPage() {
           <button className="button button-primary button-full" type="submit">Review report details <ArrowRight size={17} /></button>
         </form>
       </Panel>
-      <p className="privacy-note"><ShieldAlert size={15} /> This screen is a UI preview. The report will not be saved until backend integration is added.</p>
+      <p className="privacy-note"><ShieldAlert size={15} /> Dictation only fills this draft. Review the recognized words and report fields before continuing.</p>
     </div>
   )
 }
 
 export function HazardConfirmationPage() {
   const navigate = useNavigate()
-  const { hazardDraft, setReportPreviewed } = useWorkflow()
+  const { hazardDraft, language, setReportPreviewed } = useWorkflow()
+  const [confirmed, setConfirmed] = useState(false)
   if (!hazardDraft.category || !hazardDraft.location || !hazardDraft.description) return <Navigate to="/worker/hazard" replace />
+
+  const voiceLocale = languageOptions.find((item) => item.code === language)?.locale ?? 'ta-IN'
 
   const categoryLabel = {
     oil_leak: 'Oil leak',
@@ -249,6 +274,11 @@ export function HazardConfirmationPage() {
     unsafe_scaffold: 'Unsafe scaffold',
     other: 'Other / unsure',
   }[hazardDraft.category] || hazardDraft.category
+  const readbackText = language === 'ta'
+    ? `அபாய அறிக்கை. வகை: ${categoryLabel}. இடம்: ${hazardDraft.location}. விளக்கம்: ${hazardDraft.description}.`
+    : language === 'hi'
+      ? `खतरे की रिपोर्ट। श्रेणी: ${categoryLabel}। स्थान: ${hazardDraft.location}। विवरण: ${hazardDraft.description}।`
+      : `Hazard report. Category: ${categoryLabel}. Location: ${hazardDraft.location}. Description: ${hazardDraft.description}.`
 
   return (
     <div className="narrow-page">
@@ -256,10 +286,12 @@ export function HazardConfirmationPage() {
       <PageHeading eyebrow="REVIEW BEFORE SUBMITTING" title="Does this look right?" description="Check the category and location before the report is sent." />
       <Panel className="confirmation-panel">
         <div className="confirmation-title"><span className="confirm-icon"><CheckCircle2 size={21} /></span><div><strong>Hazard report draft</strong><span>Permit PTW-1001 · Worker WRK-1001</span></div><Badge tone="warning">Preview only</Badge></div>
-        <dl className="confirmation-list"><div><dt>Category</dt><dd>{categoryLabel}</dd></div><div><dt>Location</dt><dd>{hazardDraft.location}</dd></div><div><dt>Description</dt><dd>{hazardDraft.description}</dd></div></dl>
-        <div className="preview-warning"><ShieldAlert size={17} /><span>This review stays in this browser. It is not saved or sent to a supervisor in Phase 2.</span></div>
+        <dl className="confirmation-list"><div><dt>Category</dt><dd>{categoryLabel}</dd></div><div><dt>Location</dt><dd>{hazardDraft.location}</dd></div><div><dt>Description</dt><dd>{hazardDraft.description}</dd></div><div><dt>Voice transcript</dt><dd>{hazardDraft.transcript || 'No voice transcript · entered as text'}</dd></div></dl>
+        <VoicePlayback text={readbackText} locale={voiceLocale} />
+        <label className="transcript-confirmation"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I reviewed the transcript and report details. They match what I want to report.</span></label>
+        <div className="preview-warning"><ShieldAlert size={17} /><span>This Phase 4 screen confirms the transcript locally. It is not submitted or sent to a supervisor yet.</span></div>
       </Panel>
-      <div className="action-row"><Link className="button button-secondary" to="/worker/hazard"><ArrowLeft size={16} /> Edit details</Link><button className="button button-primary" type="button" onClick={() => { setReportPreviewed(true); navigate('/worker/home') }}>Finish screen preview <Check size={17} /></button></div>
+      <div className="action-row"><Link className="button button-secondary" to="/worker/hazard"><ArrowLeft size={16} /> Edit details</Link><button className="button button-primary" type="button" disabled={!confirmed} onClick={() => { setReportPreviewed(true); navigate('/worker/home') }}>Confirm transcript <Check size={17} /></button></div>
     </div>
   )
 }

@@ -14,6 +14,10 @@ class Settings(BaseSettings):
     jwt_secret: str = "local-demo-secret-change-me"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
+    whisper_model_path: str = ""
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
+    whisper_max_audio_mb: int = 20
 
     model_config = SettingsConfigDict(
         env_file=BACKEND_DIR / ".env",

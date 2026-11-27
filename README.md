@@ -42,3 +42,9 @@ The frontend can also be started independently; its API base URL is configurable
 - `frontend/package-lock.json` locks the JavaScript dependency tree; use `npm ci` for reproducible installs.
 - `backend/uv.lock` locks the Python dependency tree; use `uv sync` to install it.
 - `backend/requirements.txt` is the pinned production dependency export for tools that install from pip.
+
+## Phase 4 voice engine
+
+The worker screens use browser speech recognition and speech synthesis for Tamil, English, and Hindi where the browser supports them. Text entry remains available, and the hazard confirmation screen displays the transcript and requires the worker to confirm the report details.
+
+Faster-Whisper is an optional local fallback. The default backend does not install it or download a model. See [the Phase 4 setup and behavior](docs/phase-4-voice-engine.md) for installing the optional dependency and configuring an existing local model directory.
