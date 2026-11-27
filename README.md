@@ -60,3 +60,7 @@ Workers can sign in with a demo account, select an assigned active permit, choos
 ## Phase 7 understanding assessment
 
 Workers can answer questions attached to the saved briefing by speech or text. Answers are compared with the supervisor-approved answer variants, attempts are capped at three, and repeated unsuccessful attempts put the session into supervisor review. Expected answers are never returned to the worker. See [the Phase 7 assessment flow](docs/phase-7-assessment.md).
+
+## Phase 8 hazard reporting
+
+Workers can dictate or type a hazard, review and correct the suggested category, location, and description, hear a readback, then explicitly confirm submission. The report is marked submitted only after the backend persists it; retries reuse an idempotency key to avoid duplicates. Offline confirmation is labeled preview-only. See [the Phase 8 reporting flow](docs/phase-8-hazard-reporting.md).

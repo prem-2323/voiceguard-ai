@@ -110,6 +110,20 @@ export interface AssessmentResult {
   created_at: string
 }
 
+export interface HazardReport {
+  id: number
+  worker_id: number
+  permit_id: number | null
+  category: string
+  description: string
+  location: string
+  transcript: string | null
+  status: 'submitted' | 'acknowledged' | 'closed'
+  acknowledged_by: number | null
+  acknowledged_at: string | null
+  created_at: string
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -289,6 +303,26 @@ export async function submitAssessmentAnswer(
     answer,
   }, {
     headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function createHazardReport(
+  payload: {
+    permit_id: number
+    category: string
+    description: string
+    location: string
+    transcript: string | null
+  },
+  accessToken: string,
+  idempotencyKey: string,
+): Promise<ApiEnvelope<HazardReport>> {
+  const response = await api.post<ApiEnvelope<HazardReport>>('/hazards', payload, {
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Idempotency-Key': idempotencyKey,
+    },
   })
   return response.data
 }

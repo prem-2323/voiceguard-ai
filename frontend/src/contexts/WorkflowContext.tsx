@@ -7,6 +7,7 @@ export interface HazardDraft {
   location: string
   description: string
   transcript: string
+  idempotencyKey: string
 }
 
 interface WorkflowState {
@@ -46,7 +47,7 @@ const initialState: WorkflowState = {
   language: 'ta',
   languageSelected: false,
   supervisorAuthenticated: false,
-  hazardDraft: { category: '', location: '', description: '', transcript: '' },
+  hazardDraft: { category: '', location: '', description: '', transcript: '', idempotencyKey: '' },
   reportPreviewed: false,
   sosPreviewed: false,
 }
@@ -57,13 +58,13 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState(initialState)
   const value = useMemo<WorkflowState & WorkflowActions>(() => ({
     ...state,
-    setWorker: (workerId, workerName, workerAccessToken = '') => setState((current) => ({ ...current, workerId, workerName, workerAccessToken, permitId: '', permitRecordId: null, permitTaskType: '', permitLocation: '', languageSelected: false })),
-    setPermit: (permitId, permitRecordId, permitTaskType, permitLocation) => setState((current) => ({ ...current, permitId, permitRecordId, permitTaskType, permitLocation, languageSelected: false })),
+    setWorker: (workerId, workerName, workerAccessToken = '') => setState((current) => ({ ...current, workerId, workerName, workerAccessToken, permitId: '', permitRecordId: null, permitTaskType: '', permitLocation: '', languageSelected: false, hazardDraft: { category: '', location: '', description: '', transcript: '', idempotencyKey: '' }, reportPreviewed: false })),
+    setPermit: (permitId, permitRecordId, permitTaskType, permitLocation) => setState((current) => ({ ...current, permitId, permitRecordId, permitTaskType, permitLocation, languageSelected: false, hazardDraft: { ...current.hazardDraft, idempotencyKey: '' }, reportPreviewed: false })),
     setLanguage: (language) => setState((current) => ({ ...current, language, languageSelected: true })),
     setSupervisorAuthenticated: (supervisorAuthenticated) => setState((current) => ({ ...current, supervisorAuthenticated })),
     updateHazardDraft: (draft) => setState((current) => ({
       ...current,
-      hazardDraft: { ...current.hazardDraft, ...draft },
+      hazardDraft: { ...current.hazardDraft, ...draft, idempotencyKey: 'idempotencyKey' in draft ? draft.idempotencyKey ?? '' : '' },
       reportPreviewed: false,
     })),
     setReportPreviewed: (reportPreviewed) => setState((current) => ({ ...current, reportPreviewed })),

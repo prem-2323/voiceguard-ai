@@ -23,6 +23,7 @@ import { useWorkflow, type HazardDraft, type LanguageCode } from '../../contexts
 import { useSpeechRecognition } from '../../services/speech'
 import {
   ApiError,
+  createHazardReport,
   fetchBriefingAssessments,
   fetchBriefingSession,
   fetchCurrentBriefing,
@@ -35,6 +36,7 @@ import {
   startBriefing,
   type AssessmentResult,
   type BriefingBundle,
+  type HazardReport,
   type IntelligenceResult,
   type PublishedInstruction,
   type WorkerPermit,
@@ -45,6 +47,10 @@ const languageOptions: { code: LanguageCode; label: string; native: string; loca
   { code: 'en', label: 'English', native: 'English', locale: 'en-IN' },
   { code: 'hi', label: 'Hindi', native: 'हिन्दी', locale: 'hi-IN' },
 ]
+
+function createIdempotencyKey() {
+  return globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
 
 export function WorkerLoginPage() {
   const navigate = useNavigate()
@@ -559,20 +565,27 @@ export function HazardReportPage() {
 
   const handleTranscript = useCallback((transcript: string) => {
     const previousDescription = hazardDraft.description.trim()
+    const combinedTranscript = [hazardDraft.transcript.trim(), transcript].filter(Boolean).join(' ')
+    const combinedDescription = [previousDescription, transcript].filter(Boolean).join(' ')
+    if (combinedTranscript.length > 6000 || combinedDescription.length > 6000) {
+      setFormError('The report reached its 6,000-character limit. Review the captured text before continuing.')
+    }
     updateHazardDraft({
-      transcript: [hazardDraft.transcript.trim(), transcript].filter(Boolean).join(' '),
-      description: [previousDescription, transcript].filter(Boolean).join(' '),
+      transcript: combinedTranscript.slice(0, 6000),
+      description: combinedDescription.slice(0, 6000),
     })
     void analyzeHazardText(transcript)
   }, [analyzeHazardText, hazardDraft.description, hazardDraft.transcript, updateHazardDraft])
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
+    if (interpreting) return
     if (!hazardDraft.category || !hazardDraft.location.trim() || !hazardDraft.description.trim()) {
       setFormError('Choose a category and add a location and description before reviewing.')
       return
     }
     setFormError('')
+    updateHazardDraft({ idempotencyKey: createIdempotencyKey() })
     navigate('/worker/hazard/confirmation')
   }
 
@@ -593,9 +606,9 @@ export function HazardReportPage() {
             <option value="other">Other / unsure</option>
           </select>
           <label className="field-label" htmlFor="hazard-location">Location</label>
-          <input id="hazard-location" className="text-field" value={hazardDraft.location} onChange={(event) => updateHazardDraft({ location: event.target.value })} placeholder="For example, Pump 4" required />
+          <input id="hazard-location" className="text-field" value={hazardDraft.location} onChange={(event) => updateHazardDraft({ location: event.target.value })} placeholder="For example, Pump 4" maxLength={180} required />
           <label className="field-label" htmlFor="hazard-description">Describe what you noticed</label>
-          <textarea id="hazard-description" className="text-field text-area" value={hazardDraft.description} onChange={(event) => updateHazardDraft({ description: event.target.value })} placeholder="Share only what you observed. You can add details in your own words." required />
+          <textarea id="hazard-description" className="text-field text-area" value={hazardDraft.description} onChange={(event) => updateHazardDraft({ description: event.target.value })} placeholder="Share only what you observed. You can add details in your own words." maxLength={6000} required />
           <button className="button button-secondary suggest-fields-button" type="button" disabled={!hazardDraft.description.trim() || interpreting} onClick={() => void analyzeHazardText(hazardDraft.description)}>
             <Sparkles size={15} />{interpreting ? 'Checking text…' : 'Suggest category and location'}
           </button>
@@ -610,7 +623,7 @@ export function HazardReportPage() {
           )}
           <p className="field-hint">If a detail is uncertain, say so. The app will ask you to confirm the report.</p>
           {formError && <p className="form-error" role="alert">{formError}</p>}
-          <button className="button button-primary button-full" type="submit">Review report details <ArrowRight size={17} /></button>
+          <button className="button button-primary button-full" type="submit" disabled={interpreting}>Review report details <ArrowRight size={17} /></button>
         </form>
       </Panel>
       <p className="privacy-note"><ShieldAlert size={15} /> Dictation only fills this draft. Review the recognized words and report fields before continuing.</p>
@@ -620,8 +633,12 @@ export function HazardReportPage() {
 
 export function HazardConfirmationPage() {
   const navigate = useNavigate()
-  const { hazardDraft, language, setReportPreviewed } = useWorkflow()
+  const { hazardDraft, language, workerId, workerAccessToken, permitId, permitRecordId, updateHazardDraft, setReportPreviewed } = useWorkflow()
   const [confirmed, setConfirmed] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [submissionError, setSubmissionError] = useState('')
+  const [previewComplete, setPreviewComplete] = useState(false)
+  const [submittedHazard, setSubmittedHazard] = useState<HazardReport | null>(null)
   if (!hazardDraft.category || !hazardDraft.location || !hazardDraft.description) return <Navigate to="/worker/hazard" replace />
 
   const voiceLocale = languageOptions.find((item) => item.code === language)?.locale ?? 'ta-IN'
@@ -638,18 +655,52 @@ export function HazardConfirmationPage() {
       ? `खतरे की रिपोर्ट। श्रेणी: ${categoryLabel}। स्थान: ${hazardDraft.location}। विवरण: ${hazardDraft.description}।`
       : `Hazard report. Category: ${categoryLabel}. Location: ${hazardDraft.location}. Description: ${hazardDraft.description}.`
 
+  async function confirmReport() {
+    if (!confirmed || submitting || submittedHazard || previewComplete) return
+    if (!workerAccessToken || permitRecordId === null) {
+      setPreviewComplete(true)
+      setReportPreviewed(true)
+      return
+    }
+    const idempotencyKey = hazardDraft.idempotencyKey || createIdempotencyKey()
+    if (!hazardDraft.idempotencyKey) updateHazardDraft({ idempotencyKey })
+    setSubmissionError('')
+    setSubmitting(true)
+    try {
+      const response = await createHazardReport({
+        permit_id: permitRecordId,
+        category: hazardDraft.category,
+        description: hazardDraft.description,
+        location: hazardDraft.location,
+        transcript: hazardDraft.transcript || null,
+      }, workerAccessToken, idempotencyKey)
+      if (!response.success || !response.data) throw new Error('The server did not confirm that the report was saved.')
+      setSubmittedHazard(response.data)
+      setReportPreviewed(true)
+    } catch (error) {
+      setSubmissionError(error instanceof ApiError
+        ? `${error.message} Your draft is still here. Retry to safely check whether it was saved.`
+        : 'The report could not be confirmed as saved. Your draft is still here; retry to safely check whether it was saved.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div className="narrow-page">
       <StepLabel step={7} total={7} label="Confirm details" />
       <PageHeading eyebrow="REVIEW BEFORE SUBMITTING" title="Does this look right?" description="Check the category and location before the report is sent." />
       <Panel className="confirmation-panel">
-        <div className="confirmation-title"><span className="confirm-icon"><CheckCircle2 size={21} /></span><div><strong>Hazard report draft</strong><span>Permit PTW-1001 · Worker WRK-1001</span></div><Badge tone="warning">Preview only</Badge></div>
+        <div className="confirmation-title"><span className="confirm-icon"><CheckCircle2 size={21} /></span><div><strong>{submittedHazard ? `Hazard report #${submittedHazard.id}` : 'Hazard report draft'}</strong><span>Permit {permitId || 'PTW-1001'} · Worker {workerId || 'WRK-1001'}</span></div><Badge tone={submittedHazard ? 'success' : 'warning'}>{submittedHazard ? `Saved · ${submittedHazard.status}` : 'Awaiting confirmation'}</Badge></div>
         <dl className="confirmation-list"><div><dt>Category</dt><dd>{categoryLabel}</dd></div><div><dt>Location</dt><dd>{hazardDraft.location}</dd></div><div><dt>Description</dt><dd>{hazardDraft.description}</dd></div><div><dt>Voice transcript</dt><dd>{hazardDraft.transcript || 'No voice transcript · entered as text'}</dd></div></dl>
         <VoicePlayback text={readbackText} locale={voiceLocale} />
-        <label className="transcript-confirmation"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I reviewed the transcript and report details. They match what I want to report.</span></label>
-        <div className="preview-warning"><ShieldAlert size={17} /><span>This Phase 4 screen confirms the transcript locally. It is not submitted or sent to a supervisor yet.</span></div>
+        {!submittedHazard && !previewComplete && <label className="transcript-confirmation"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I reviewed the transcript and report details. They match what I want to report.</span></label>}
+        {submittedHazard && <div className="inline-note"><CheckCircle2 size={17} /><span>The server saved this report with status “{submittedHazard.status}”. It is now available to the assigned supervisor.</span></div>}
+        {previewComplete && <div className="preview-warning"><ShieldAlert size={17} /><span>Local preview only. No backend session or assigned permit was available, so this report was not submitted or saved.</span></div>}
+        {!workerAccessToken || permitRecordId === null ? !previewComplete && <div className="preview-warning"><ShieldAlert size={17} /><span>Sign in through the backend and select an assigned permit to submit this report. You can complete a local preview, but it will not be saved.</span></div> : !submittedHazard && <div className="privacy-note"><ShieldAlert size={15} /> The report is sent only after confirmation. A successful server response is required before it is marked submitted.</div>}
+        {submissionError && <p className="form-error" role="alert">{submissionError}</p>}
       </Panel>
-      <div className="action-row"><Link className="button button-secondary" to="/worker/hazard"><ArrowLeft size={16} /> Edit details</Link><button className="button button-primary" type="button" disabled={!confirmed} onClick={() => { setReportPreviewed(true); navigate('/worker/home') }}>Confirm transcript <Check size={17} /></button></div>
+      <div className="action-row"><Link className="button button-secondary" to="/worker/hazard"><ArrowLeft size={16} /> {submittedHazard || previewComplete ? 'Report another' : 'Edit details'}</Link>{submittedHazard || previewComplete ? <button className="button button-primary" type="button" onClick={() => navigate('/worker/home')}>Return to worker home <ArrowRight size={17} /></button> : <button className="button button-primary" type="button" disabled={!confirmed || submitting} onClick={() => void confirmReport()}>{submitting ? 'Submitting…' : !workerAccessToken || permitRecordId === null ? 'Complete local preview' : 'Confirm & submit report'} <Check size={17} /></button>}</div>
     </div>
   )
 }
