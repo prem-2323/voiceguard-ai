@@ -1,4 +1,5 @@
 import base64
+import binascii
 import hashlib
 import hmac
 import secrets
@@ -24,11 +25,16 @@ def verify_password(password: str, encoded: str) -> bool:
         scheme, rounds, salt_text, digest_text = encoded.split("$", maxsplit=3)
         if scheme != _HASH_SCHEME:
             return False
+        iteration_count = int(rounds)
+        if iteration_count < 100_000 or iteration_count > 1_000_000:
+            return False
         salt = base64.urlsafe_b64decode(salt_text.encode())
         expected = base64.urlsafe_b64decode(digest_text.encode())
-        actual = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, int(rounds))
+        if len(salt) != 16 or len(expected) != hashlib.sha256().digest_size:
+            return False
+        actual = hashlib.pbkdf2_hmac("sha256", password.encode(), salt, iteration_count)
         return hmac.compare_digest(actual, expected)
-    except (ValueError, TypeError):
+    except (ValueError, TypeError, binascii.Error):
         return False
 
 

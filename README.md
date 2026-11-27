@@ -64,3 +64,19 @@ Workers can answer questions attached to the saved briefing by speech or text. A
 ## Phase 8 hazard reporting
 
 Workers can dictate or type a hazard, review and correct the suggested category, location, and description, hear a readback, then explicitly confirm submission. The report is marked submitted only after the backend persists it; retries reuse an idempotency key to avoid duplicates. Offline confirmation is labeled preview-only. See [the Phase 8 reporting flow](docs/phase-8-hazard-reporting.md).
+
+## Phases 9–10 supervisor updates and simulated SOS
+
+The supervisor console shows records only for assigned workers. It receives authenticated WebSocket update events and falls back to polling when the socket is unavailable. Workers can submit a persisted simulated SOS, retry it safely with an idempotency key, and see the supervisor's acknowledgement. The SOS never contacts emergency services. See [the Phase 9–10 workflow notes](docs/phase-9-10-supervisor-and-sos.md).
+
+## Phase 11 security and workflow checks
+
+Protected routes derive the account from a signed, expiring bearer token and enforce worker/supervisor roles and assignment scope. Supervisor review actions are audited. Production-like environments reject the built-in demo JWT secret, wildcard credentialed CORS, and non-HS256 JWT settings; demo passwords are fictional and must not be reused. Set a private random `JWT_SECRET` of at least 32 bytes and list exact trusted origins before running outside development. See [the Phase 11 security notes](docs/phase-11-security-testing.md).
+
+Run the isolated backend authorization and workflow suite with:
+
+```powershell
+cd backend
+uv sync --group dev
+uv run pytest -q
+```

@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
@@ -22,8 +23,12 @@ async def websocket_updates(websocket: WebSocket) -> None:
     user_id: int | None = None
     try:
         try:
-            authentication = json.loads(await websocket.receive_text())
-        except (json.JSONDecodeError, WebSocketDisconnect):
+            raw_authentication = await asyncio.wait_for(websocket.receive_text(), timeout=5)
+            if len(raw_authentication) > 4096:
+                await websocket.close(code=4401)
+                return
+            authentication = json.loads(raw_authentication)
+        except (json.JSONDecodeError, WebSocketDisconnect, TimeoutError):
             await websocket.close(code=4401)
             return
         token = authentication.get("token") if isinstance(authentication, dict) else None
@@ -46,7 +51,18 @@ async def websocket_updates(websocket: WebSocket) -> None:
         while True:
             message = await websocket.receive_text()
             if message == "ping":
+                if not isinstance(token, str) or decode_access_token(token) is None:
+                    await websocket.close(code=4401)
+                    return
+                with SessionLocal() as db:
+                    user = db.get(User, user_id)
+                    if user is None or not user.is_active:
+                        await websocket.close(code=4401)
+                        return
                 await websocket.send_json({"type": "pong"})
+            else:
+                await websocket.close(code=4400)
+                return
     except WebSocketDisconnect:
         pass
     finally:
