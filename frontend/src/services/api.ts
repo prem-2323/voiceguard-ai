@@ -96,6 +96,20 @@ export interface BriefingBundle {
   instruction: PublishedInstruction
 }
 
+export interface AssessmentResult {
+  id: number
+  session_id: number
+  worker_id: number
+  permit_id: number
+  question_id: number
+  question_version: number
+  worker_answer: string
+  result: 'correct' | 'incorrect' | 'unclear'
+  attempt_count: number
+  reviewed_by: number | null
+  created_at: string
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -214,6 +228,16 @@ export async function fetchCurrentBriefing(
   return response.data
 }
 
+export async function fetchBriefingSession(
+  sessionId: number,
+  accessToken: string,
+): Promise<ApiEnvelope<BriefingBundle>> {
+  const response = await api.get<ApiEnvelope<BriefingBundle>>(`/briefings/${sessionId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
 export async function startBriefing(
   permitId: number,
   language: 'en' | 'ta' | 'hi',
@@ -237,6 +261,32 @@ export async function saveBriefingProgress(
   const response = await api.patch<ApiEnvelope<BriefingSession>>(`/briefings/${sessionId}/progress`, {
     current_step: currentStep,
     completed,
+  }, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchBriefingAssessments(
+  sessionId: number,
+  accessToken: string,
+): Promise<ApiEnvelope<AssessmentResult[]>> {
+  const response = await api.get<ApiEnvelope<AssessmentResult[]>>('/assessments', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { session_id: sessionId },
+  })
+  return response.data
+}
+
+export async function submitAssessmentAnswer(
+  sessionId: number,
+  questionId: number,
+  answer: string,
+  accessToken: string,
+): Promise<ApiEnvelope<AssessmentResult>> {
+  const response = await api.post<ApiEnvelope<AssessmentResult>>(`/briefings/${sessionId}/assessments`, {
+    question_id: questionId,
+    answer,
   }, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })

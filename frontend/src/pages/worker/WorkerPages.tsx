@@ -10,6 +10,8 @@ import {
   FileWarning,
   Languages,
   LifeBuoy,
+  Mic,
+  MicOff,
   ShieldAlert,
   Sparkles,
 } from 'lucide-react'
@@ -18,15 +20,20 @@ import { Badge, PageHeading, Panel, StepLabel } from '../../components/ui'
 import { VoiceCapture, VoicePlayback } from '../../components/voice/VoiceControls'
 import { VoiceCommandPanel } from '../../components/voice/VoiceCommandPanel'
 import { useWorkflow, type HazardDraft, type LanguageCode } from '../../contexts/WorkflowContext'
+import { useSpeechRecognition } from '../../services/speech'
 import {
   ApiError,
+  fetchBriefingAssessments,
+  fetchBriefingSession,
   fetchCurrentBriefing,
   fetchPublishedInstructions,
   fetchWorkerPermits,
   interpretVoice,
   loginDemo,
   saveBriefingProgress,
+  submitAssessmentAnswer,
   startBriefing,
+  type AssessmentResult,
   type BriefingBundle,
   type IntelligenceResult,
   type PublishedInstruction,
@@ -363,19 +370,146 @@ export function BriefingPage() {
 }
 
 export function AssessmentPage() {
-  const { language } = useWorkflow()
+  const { language, permitRecordId, workerAccessToken } = useWorkflow()
+  const [briefing, setBriefing] = useState<BriefingBundle | null>(null)
+  const [results, setResults] = useState<AssessmentResult[]>([])
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'preview' | 'noBriefing' | 'error'>('loading')
+  const [answer, setAnswer] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+  const [formError, setFormError] = useState('')
+  const [feedback, setFeedback] = useState<AssessmentResult['result'] | null>(null)
+  const voiceLocale = languageOptions.find((item) => item.code === language)?.locale ?? 'ta-IN'
+  const handleTranscript = useCallback((transcript: string) => {
+    setAnswer((current) => [current.trim(), transcript].filter(Boolean).join(' '))
+    setFormError('')
+  }, [])
+  const { supported, listening, interimTranscript, error: speechError, start, stop } = useSpeechRecognition(voiceLocale, handleTranscript)
+
+  useEffect(() => {
+    let mounted = true
+    setBriefing(null)
+    setResults([])
+    setAnswer('')
+    setFeedback(null)
+    setFormError('')
+    if (!workerAccessToken || permitRecordId === null) {
+      setLoadState('preview')
+      return () => { mounted = false }
+    }
+    setLoadState('loading')
+    void (async () => {
+      try {
+        const currentResponse = await fetchCurrentBriefing(permitRecordId, language, workerAccessToken)
+        if (!currentResponse.success) throw new Error('The briefing could not be loaded.')
+        if (!currentResponse.data) {
+          if (mounted) setLoadState('noBriefing')
+          return
+        }
+        const assessmentResponse = await fetchBriefingAssessments(currentResponse.data.briefing.id, workerAccessToken)
+        if (!assessmentResponse.success || !assessmentResponse.data) throw new Error('Assessment progress could not be loaded.')
+        if (mounted) {
+          setBriefing(currentResponse.data)
+          setResults(assessmentResponse.data)
+          setLoadState('ready')
+        }
+      } catch {
+        if (mounted) setLoadState('error')
+      }
+    })()
+    return () => { mounted = false }
+  }, [language, permitRecordId, workerAccessToken])
+
+  async function sendAnswer(unsure = false) {
+    if (!workerAccessToken || !briefing) return
+    const question = briefing.instruction.questions.find((item) => !results.some((result) => result.question_id === item.id && result.result === 'correct'))
+    if (!question) return
+    const submittedAnswer = unsure ? '' : answer.trim()
+    if (!unsure && !submittedAnswer) {
+      setFormError('Enter an answer or choose “I’m not sure” to ask for help.')
+      return
+    }
+    setSubmitting(true)
+    setFormError('')
+    setFeedback(null)
+    try {
+      const response = await submitAssessmentAnswer(briefing.briefing.id, question.id, submittedAnswer, workerAccessToken)
+      if (!response.success || !response.data) throw new Error('The answer was not recorded.')
+      const submitted = response.data
+      setResults((current) => [submitted, ...current.filter((item) => item.id !== submitted.id)])
+      setFeedback(submitted.result)
+      if (submitted.result !== 'incorrect') setAnswer('')
+      try {
+        const sessionResponse = await fetchBriefingSession(briefing.briefing.id, workerAccessToken)
+        if (sessionResponse.success && sessionResponse.data) setBriefing(sessionResponse.data)
+      } catch {
+        // The saved answer remains visible even if refreshing the session status fails.
+      }
+    } catch (error) {
+      setFormError(error instanceof ApiError ? error.message : 'The answer could not be saved. Check your connection and try again.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const latestByQuestion = new Map<number, AssessmentResult>()
+  for (const result of results) {
+    const previous = latestByQuestion.get(result.question_id)
+    if (!previous || result.attempt_count > previous.attempt_count) latestByQuestion.set(result.question_id, result)
+  }
+  const questions = briefing?.instruction.questions ?? []
+  const currentQuestionIndex = questions.findIndex((question) => latestByQuestion.get(question.id)?.result !== 'correct')
+  const currentQuestion = currentQuestionIndex >= 0 ? questions[currentQuestionIndex] : null
+  const currentQuestionResult = currentQuestion ? latestByQuestion.get(currentQuestion.id) : undefined
+  const attemptsUsed = currentQuestionResult?.attempt_count ?? 0
+  const completedCount = questions.filter((question) => latestByQuestion.get(question.id)?.result === 'correct').length
+  const assessmentComplete = briefing?.briefing.status === 'completed' || (questions.length > 0 && completedCount === questions.length)
+  const supervisorReview = briefing?.briefing.status === 'supervisor_review'
+
   return (
     <div className="narrow-page">
       <StepLabel step={5} total={7} label="Understanding check" />
-      <PageHeading eyebrow="ASSESSMENT" title="Check your understanding." description="Questions and scoring will use approved, versioned content." />
+      <PageHeading eyebrow="ASSESSMENT" title="Check your understanding." description="Answer questions from the approved briefing by voice or text." />
       <Panel className="assessment-preview-panel">
         <div className="assessment-preview-icon"><CircleHelp size={24} /></div>
-        <Badge tone="warning">Question set pending approval</Badge>
-        <h2>No approved question is available yet.</h2>
-        <p>This screen preview will show one question at a time, accept a spoken or typed answer, and ask for supervisor review when the answer is unclear.</p>
-        <div className="assessment-metadata"><span>Selected language</span><strong>{languageOptions.find((item) => item.code === language)?.label}</strong><span>Attempts available</span><strong>Up to 3</strong></div>
+        <Badge tone={assessmentComplete ? 'success' : supervisorReview ? 'warning' : 'info'}>{assessmentComplete ? 'Assessment complete' : supervisorReview ? 'Supervisor review required' : 'Approved question check'}</Badge>
+        <div className="assessment-metadata"><span>Selected language</span><strong>{languageOptions.find((item) => item.code === language)?.label}</strong>{briefing && <><span>Questions passed</span><strong>{completedCount} of {questions.length}</strong></>}</div>
+        {loadState === 'loading' && <p role="status">Loading the saved briefing and assessment progress…</p>}
+        {loadState === 'preview' && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>Sign in and select an assigned permit first.</strong><p>Assessment questions are shown only from a saved, published briefing. Offline preview cannot submit or save answers.</p></div></div>}
+        {loadState === 'noBriefing' && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>No saved briefing is available.</strong><p>Open the assigned permit’s safety briefing, read the approved instruction, and mark it reviewed before starting this check.</p></div></div>}
+        {loadState === 'error' && <p className="form-error" role="alert">The saved briefing or assessment progress could not be loaded. Check the backend connection and try again.</p>}
+        {loadState === 'ready' && briefing && briefing.briefing.current_step < 100 && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>Review the instruction before the assessment.</strong><p>Return to the briefing and mark it reviewed. Your saved reading progress is still available.</p></div></div>}
+        {loadState === 'ready' && questions.length === 0 && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>No approved assessment question is available.</strong><p>Ask the supervisor to review and publish a question for this briefing.</p></div></div>}
+        {loadState === 'ready' && supervisorReview && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>A supervisor needs to review this assessment.</strong><p>Three attempts were used without an accepted answer. Pause here and ask your supervisor to review the result.</p></div></div>}
+        {loadState === 'ready' && assessmentComplete && <div className="assessment-success"><CheckCircle2 size={21} /><div><strong>All approved questions were answered correctly.</strong><p>Your assessment result has been saved with the briefing.</p></div></div>}
+        {loadState === 'ready' && !assessmentComplete && !supervisorReview && briefing && briefing.briefing.current_step >= 100 && currentQuestion && (
+          <>
+            <div className="assessment-question-card">
+              <div className="assessment-question-heading"><span>Question {currentQuestionIndex + 1} of {questions.length}</span><Badge tone="info">Attempt {attemptsUsed + 1} of 3</Badge></div>
+              <h2>{currentQuestion.question}</h2>
+              <VoicePlayback text={currentQuestion.question} locale={voiceLocale} />
+            </div>
+            <form className="stack-form assessment-answer-form" onSubmit={(event) => { event.preventDefault(); void sendAnswer() }}>
+              <label className="field-label" htmlFor="assessment-answer">Your answer</label>
+              <div className="assessment-answer-entry">
+                {supported && <button className={`mic-button assessment-mic ${listening ? 'mic-preview-active' : ''}`} type="button" aria-label={listening ? 'Stop listening to answer' : 'Speak your answer'} aria-pressed={listening} disabled={submitting} onClick={listening ? stop : start}>{listening ? <MicOff size={20} /> : <Mic size={20} />}</button>}
+                <textarea id="assessment-answer" className="text-field assessment-answer-field" value={answer} onChange={(event) => setAnswer(event.target.value)} maxLength={4000} rows={3} placeholder="Speak or type your answer" />
+              </div>
+              {(interimTranscript || listening) && <p className="command-listening" role="status">{interimTranscript || 'Listening for your answer…'}</p>}
+              {speechError && <p className="form-error" role="alert">{speechError}</p>}
+              <p className="field-hint">Your answer is matched against supervisor-approved answer variants after text normalization. Those variants are not shown here.</p>
+              <p className="field-hint">“I’m not sure” records an unclear attempt. Three incorrect or unclear attempts send this briefing for supervisor review.</p>
+              {currentQuestionResult && <p className="assessment-attempt-note" role="status">Latest attempt: {currentQuestionResult.result}. {Math.max(0, 3 - attemptsUsed)} attempt{3 - attemptsUsed === 1 ? '' : 's'} remaining.</p>}
+              {feedback && <p className={`assessment-feedback ${feedback}`} role="status">{feedback === 'correct' ? 'Answer accepted. Moving to the next approved question.' : feedback === 'unclear' ? 'No answer was understood. You can try again or ask your supervisor for help.' : 'That answer did not match an approved answer. Try a different answer or choose help.'}</p>}
+              {formError && <p className="form-error" role="alert">{formError}</p>}
+              <div className="action-row assessment-actions">
+                <button className="button button-secondary" type="button" onClick={() => void sendAnswer(true)} disabled={submitting || attemptsUsed >= 3}>{submitting ? 'Saving…' : 'I’m not sure (unclear)'}</button>
+                <button className="button button-primary" type="submit" disabled={submitting || !answer.trim() || attemptsUsed >= 3}>{submitting ? 'Checking…' : 'Submit answer'} <ArrowRight size={17} /></button>
+              </div>
+            </form>
+          </>
+        )}
       </Panel>
-      <div className="action-row"><Link className="button button-secondary" to="/worker/briefing"><ArrowLeft size={16} /> Briefing</Link><Link className="button button-primary" to="/worker/hazard">Continue to hazard report <ArrowRight size={17} /></Link></div>
+      <div className="action-row"><Link className="button button-secondary" to="/worker/briefing"><ArrowLeft size={16} /> Briefing</Link>{assessmentComplete && <Link className="button button-primary" to="/worker/hazard">Continue to hazard report <ArrowRight size={17} /></Link>}</div>
     </div>
   )
 }

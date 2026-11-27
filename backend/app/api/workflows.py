@@ -1,4 +1,4 @@
-import re
+import unicodedata
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -71,7 +71,15 @@ def _worker_instruction(instruction: SafetyInstruction) -> WorkerInstructionRead
 
 
 def _normalise_answer(value: str) -> str:
-    return " ".join(re.findall(r"[^\W_]+", value.casefold(), flags=re.UNICODE))
+    normalized = unicodedata.normalize("NFC", value.casefold())
+    characters = []
+    for character in normalized:
+        category = unicodedata.category(character)
+        if character.isalnum() or category.startswith("M"):
+            characters.append(character)
+        elif characters and characters[-1] != " ":
+            characters.append(" ")
+    return " ".join("".join(characters).split())
 
 
 def _as_utc(value: datetime) -> datetime:
@@ -375,6 +383,7 @@ def update_briefing_progress(session_id: int, payload: BriefingProgress, db: Ses
 def submit_assessment(session_id: int, payload: AssessmentSubmit, db: Session = Depends(get_db),
                       user: User = Depends(require_roles(UserRole.WORKER))):
     briefing = _scoped_briefing(db, user, session_id)
+    get_scoped_permit(db, user, briefing.permit_id, active=True)
     if briefing.status in (BriefingStatus.COMPLETED, BriefingStatus.SUPERVISOR_REVIEW):
         raise HTTPException(status_code=409, detail="Assessment is closed for this briefing")
     if briefing.current_step < 100:
@@ -417,7 +426,7 @@ def submit_assessment(session_id: int, payload: AssessmentSubmit, db: Session = 
             SafetyQuestion.instruction_id == briefing.instruction_id)).all())
         latest = {}
         for row in db.scalars(select(AssessmentResult).where(AssessmentResult.session_id == briefing.id)
-                              .order_by(AssessmentResult.created_at)).all():
+                              .order_by(AssessmentResult.created_at, AssessmentResult.attempt_count)).all():
             latest[row.question_id] = row.result
         if required_ids and all(latest.get(question_id) == AssessmentResultStatus.CORRECT
                                 for question_id in required_ids if question_id != question.id):
@@ -431,13 +440,23 @@ def submit_assessment(session_id: int, payload: AssessmentSubmit, db: Session = 
 
 @router.get("/assessments", tags=["assessments"])
 def list_assessments(db: Session = Depends(get_db), user: User = Depends(get_current_user),
-                     worker_id: int | None = Query(default=None), pending_review: bool = False):
+                     worker_id: int | None = Query(default=None), session_id: int | None = Query(default=None, ge=1),
+                     pending_review: bool = False):
     statement = select(AssessmentResult).order_by(AssessmentResult.created_at.desc())
     if user.role == UserRole.WORKER:
         statement = statement.where(AssessmentResult.worker_id == user.id)
+        if session_id is not None:
+            session = db.get(BriefingSession, session_id)
+            if session is None or session.worker_id != user.id:
+                raise HTTPException(status_code=404, detail="Briefing was not found")
+            statement = statement.where(AssessmentResult.session_id == session.id)
     else:
         statement = statement.join(SupervisorAssignment, SupervisorAssignment.worker_id == AssessmentResult.worker_id).where(
             SupervisorAssignment.supervisor_id == user.id)
+        if session_id is not None:
+            session = _get_or_404(db, BriefingSession, session_id, "Briefing")
+            require_worker_access(db, user, session.worker_id)
+            statement = statement.where(AssessmentResult.session_id == session.id)
         if worker_id is not None:
             require_worker_access(db, user, worker_id)
             statement = statement.where(AssessmentResult.worker_id == worker_id)

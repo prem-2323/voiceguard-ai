@@ -193,6 +193,23 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .assessment-preview-panel > p { max-width: 560px; margin: 0; color: #6b7b71; font-size: 12px; line-height: 1.65; }
 .assessment-metadata { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 12px; margin-top: 6px; padding-top: 14px; border-top: 1px solid #e8e9e1; color: #758178; font-size: 11px; }
 .assessment-metadata strong { color: #30483c; }
+.assessment-question-card { width: 100%; padding: 17px; border: 1px solid #dce5dc; border-radius: 13px; background: #fff; }
+.assessment-question-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #758178; font-size: 10px; font-weight: 700; }
+.assessment-question-card h2 { margin: 18px 0 0; color: #294137; font-family: Georgia, serif; font-size: 21px; font-weight: 500; line-height: 1.5; }
+.assessment-question-card .voice-preview { margin-top: 14px; }
+.assessment-answer-form { width: 100%; }
+.assessment-answer-entry { display: flex; align-items: flex-start; gap: 11px; }
+.assessment-mic { width: 48px; height: 48px; }
+.assessment-answer-field { min-width: 0; flex: 1; min-height: 91px; resize: vertical; line-height: 1.5; }
+.assessment-attempt-note { margin: 0; color: #7a673d; font-size: 11px; }
+.assessment-feedback { margin: 0; padding: 11px 13px; border: 1px solid #d9e6db; border-radius: 10px; color: #355c43; background: #f1f8f1; font-size: 11px; line-height: 1.5; }
+.assessment-feedback.incorrect, .assessment-feedback.unclear { border-color: #f0d8b3; color: #775b34; background: #fff7e9; }
+.assessment-success { width: 100%; display: flex; align-items: flex-start; gap: 11px; padding: 14px; border: 1px solid #cce1d0; border-radius: 11px; color: #356347; background: #f1f8f1; }
+.assessment-success svg { flex: 0 0 auto; }
+.assessment-success strong { font-size: 12px; }
+.assessment-success p { margin: 4px 0 0; color: #5f7766; font-size: 11px; line-height: 1.5; }
+.assessment-actions { width: 100%; flex-wrap: wrap; }
+.assessment-actions > * { flex: 1 1 180px; justify-content: center; }
 .hazard-form-panel { padding: 20px; }
 .voice-capture-preview { min-height: 91px; display: flex; align-items: center; gap: 15px; padding: 13px; border: 1px solid #d9e3d9; border-radius: 14px; background: #f5f9f4; }
 .mic-button { width: 62px; height: 62px; display: grid; flex: 0 0 auto; place-items: center; border: 0; border-radius: 50%; color: white; background: var(--green); cursor: pointer; box-shadow: 0 6px 17px rgba(11,79,62,.2); }
