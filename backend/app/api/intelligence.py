@@ -8,7 +8,7 @@ from typing_extensions import Annotated
 
 from app.api.dependencies import require_roles
 from app.core.database import get_db
-from app.models import Permit, SafetyInstruction, User
+from app.models import BriefingSession, Permit, SafetyInstruction, User
 from app.models.enums import ApprovalStatus, UserRole
 from app.schemas import success
 from app.services.authorization import get_scoped_permit
@@ -24,6 +24,7 @@ class InterpretRequest(BaseModel):
     language: Language
     context: Literal["general", "briefing", "hazard"] = "general"
     permit_number: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=40)] | None = None
+    briefing_session_id: int | None = None
 
 
 @router.post("/intelligence/interpret")
@@ -36,11 +37,25 @@ def interpret_command(payload: InterpretRequest, db: Session = Depends(get_db),
             permit = db.scalar(select(Permit).where(Permit.permit_number == payload.permit_number))
             if permit is not None:
                 permit = get_scoped_permit(db, user, permit.id, active=True)
-                instruction = db.scalar(select(SafetyInstruction).where(
-                    SafetyInstruction.task_type == permit.task_type,
-                    SafetyInstruction.language == payload.language,
-                    SafetyInstruction.approval_status == ApprovalStatus.PUBLISHED,
-                ).order_by(SafetyInstruction.version.desc()).limit(1))
+                if payload.briefing_session_id is not None:
+                    instruction = db.scalar(
+                        select(SafetyInstruction)
+                        .join(BriefingSession, BriefingSession.instruction_id == SafetyInstruction.id)
+                        .where(
+                            BriefingSession.id == payload.briefing_session_id,
+                            BriefingSession.worker_id == user.id,
+                            BriefingSession.permit_id == permit.id,
+                            SafetyInstruction.language == payload.language,
+                            SafetyInstruction.version == BriefingSession.instruction_version,
+                            SafetyInstruction.approval_status == ApprovalStatus.PUBLISHED,
+                        )
+                    )
+                else:
+                    instruction = db.scalar(select(SafetyInstruction).where(
+                        SafetyInstruction.task_type == permit.task_type,
+                        SafetyInstruction.language == payload.language,
+                        SafetyInstruction.approval_status == ApprovalStatus.PUBLISHED,
+                    ).order_by(SafetyInstruction.version.desc()).limit(1))
         result["approved_instruction"] = ({
             "id": instruction.id,
             "title": instruction.title,

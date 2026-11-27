@@ -79,6 +79,23 @@ export interface PublishedInstruction {
   questions: { id: number; question: string; language: string; version: number }[]
 }
 
+export interface BriefingSession {
+  id: number
+  worker_id: number
+  permit_id: number
+  instruction_id: number
+  instruction_version: number
+  status: 'started' | 'in_progress' | 'completed' | 'supervisor_review'
+  current_step: number
+  started_at: string
+  completed_at: string | null
+}
+
+export interface BriefingBundle {
+  briefing: BriefingSession
+  instruction: PublishedInstruction
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -152,12 +169,14 @@ export async function interpretVoice(
   accessToken: string,
   context: 'general' | 'briefing' | 'hazard',
   permitNumber?: string,
+  briefingSessionId?: number,
 ): Promise<ApiEnvelope<IntelligenceResult>> {
   const response = await api.post<ApiEnvelope<IntelligenceResult>>('/intelligence/interpret', {
     text,
     language,
     context,
     ...(permitNumber ? { permit_number: permitNumber } : {}),
+    ...(briefingSessionId ? { briefing_session_id: briefingSessionId } : {}),
   }, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -179,6 +198,47 @@ export async function fetchPublishedInstructions(
   const response = await api.get<ApiEnvelope<PublishedInstruction[]>>('/instructions', {
     headers: { Authorization: `Bearer ${accessToken}` },
     params: { permit_id: permitId, language },
+  })
+  return response.data
+}
+
+export async function fetchCurrentBriefing(
+  permitId: number,
+  language: 'en' | 'ta' | 'hi',
+  accessToken: string,
+): Promise<ApiEnvelope<BriefingBundle | null>> {
+  const response = await api.get<ApiEnvelope<BriefingBundle | null>>('/briefings/current', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { permit_id: permitId, language },
+  })
+  return response.data
+}
+
+export async function startBriefing(
+  permitId: number,
+  language: 'en' | 'ta' | 'hi',
+  accessToken: string,
+): Promise<ApiEnvelope<BriefingBundle>> {
+  const response = await api.post<ApiEnvelope<BriefingBundle>>('/briefings', {
+    permit_id: permitId,
+    language,
+  }, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function saveBriefingProgress(
+  sessionId: number,
+  currentStep: number,
+  completed: boolean,
+  accessToken: string,
+): Promise<ApiEnvelope<BriefingSession>> {
+  const response = await api.patch<ApiEnvelope<BriefingSession>>(`/briefings/${sessionId}/progress`, {
+    current_step: currentStep,
+    completed,
+  }, {
+    headers: { Authorization: `Bearer ${accessToken}` },
   })
   return response.data
 }

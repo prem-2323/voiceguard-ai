@@ -1,5 +1,6 @@
 import re
 from datetime import UTC, datetime
+from typing import Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
 from sqlalchemy import func, or_, select
@@ -133,7 +134,13 @@ def list_permits(db: Session = Depends(get_db), user: User = Depends(get_current
                  worker_id: int | None = Query(default=None)):
     statement = select(Permit).order_by(Permit.created_at.desc())
     if user.role == UserRole.WORKER:
-        statement = statement.where(Permit.worker_id == user.id)
+        now = utc_now()
+        statement = statement.where(
+            Permit.worker_id == user.id,
+            Permit.status == PermitStatus.ACTIVE,
+            Permit.valid_from <= now,
+            or_(Permit.valid_until.is_(None), Permit.valid_until >= now),
+        )
     elif worker_id is not None:
         require_worker_access(db, user, worker_id)
         statement = statement.where(Permit.worker_id == worker_id)
@@ -303,6 +310,32 @@ def start_briefing(payload: BriefingStart, db: Session = Depends(get_db),
                     "instruction": _worker_instruction(instruction).model_dump(mode="json")}, "Briefing started")
 
 
+@router.get("/briefings/current", tags=["briefings"])
+def get_current_briefing(permit_id: int, language: Literal["en", "ta", "hi"], db: Session = Depends(get_db),
+                         user: User = Depends(require_roles(UserRole.WORKER))):
+    permit = get_scoped_permit(db, user, permit_id, active=True)
+    briefing = db.scalar(
+        select(BriefingSession)
+        .join(SafetyInstruction, SafetyInstruction.id == BriefingSession.instruction_id)
+        .options(selectinload(BriefingSession.instruction).selectinload(SafetyInstruction.questions))
+        .where(
+            BriefingSession.worker_id == user.id,
+            BriefingSession.permit_id == permit.id,
+            SafetyInstruction.language == language,
+            SafetyInstruction.approval_status == ApprovalStatus.PUBLISHED,
+        )
+        .order_by(BriefingSession.started_at.desc())
+        .limit(1)
+    )
+    if briefing is None:
+        return success(None, "No saved briefing for this permit and language")
+    instruction = briefing.instruction
+    return success({
+        "briefing": BriefingRead.model_validate(briefing).model_dump(mode="json"),
+        "instruction": _worker_instruction(instruction).model_dump(mode="json"),
+    }, "Saved briefing loaded")
+
+
 def _scoped_briefing(db: Session, user: User, session_id: int) -> BriefingSession:
     briefing = _get_or_404(db, BriefingSession, session_id, "Briefing")
     require_worker_access(db, user, briefing.worker_id)
@@ -332,6 +365,8 @@ def update_briefing_progress(session_id: int, payload: BriefingProgress, db: Ses
     briefing.current_step = 100 if payload.completed else payload.current_step
     # Reading progress alone does not count as a passing assessment.
     briefing.status = BriefingStatus.IN_PROGRESS
+    record_audit(db, actor=user, action="briefing_progress_saved", entity_type="briefing", entity_id=briefing.id,
+                 details={"current_step": briefing.current_step})
     _commit(db)
     return success(BriefingRead.model_validate(briefing))
 

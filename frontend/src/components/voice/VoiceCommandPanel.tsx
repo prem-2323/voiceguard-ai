@@ -28,11 +28,13 @@ export function VoiceCommandPanel({
   language,
   accessToken,
   permitNumber,
+  briefingSessionId,
 }: {
   locale: string
   language: LanguageCode
   accessToken: string
   permitNumber: string
+  briefingSessionId?: number
 }) {
   const [commandText, setCommandText] = useState('')
   const [result, setResult] = useState<IntelligenceResult | null>(null)
@@ -48,7 +50,7 @@ export function VoiceCommandPanel({
     }
     setBusy(true)
     try {
-      const response = await interpretVoice(text, language, accessToken, 'briefing', permitNumber)
+      const response = await interpretVoice(text, language, accessToken, 'briefing', permitNumber, briefingSessionId)
       if (!response.success || !response.data) throw new Error('No command response was returned.')
       setResult(response.data)
     } catch (cause) {
@@ -56,7 +58,7 @@ export function VoiceCommandPanel({
     } finally {
       setBusy(false)
     }
-  }, [accessToken, language, permitNumber])
+  }, [accessToken, briefingSessionId, language, permitNumber])
 
   const handleVoiceCommand = useCallback((text: string) => {
     setCommandText(text)

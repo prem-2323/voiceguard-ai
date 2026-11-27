@@ -20,12 +20,17 @@ import { VoiceCommandPanel } from '../../components/voice/VoiceCommandPanel'
 import { useWorkflow, type HazardDraft, type LanguageCode } from '../../contexts/WorkflowContext'
 import {
   ApiError,
+  fetchCurrentBriefing,
   fetchPublishedInstructions,
   fetchWorkerPermits,
   interpretVoice,
   loginDemo,
+  saveBriefingProgress,
+  startBriefing,
+  type BriefingBundle,
   type IntelligenceResult,
   type PublishedInstruction,
+  type WorkerPermit,
 } from '../../services/api'
 
 const languageOptions: { code: LanguageCode; label: string; native: string; locale: string }[] = [
@@ -88,10 +93,33 @@ export function WorkerLoginPage() {
 
 export function PermitPage() {
   const navigate = useNavigate()
-  const { permitId, setPermit } = useWorkflow()
+  const { permitId, workerAccessToken, workerId: savedWorkerId, workerName: savedName, setPermit } = useWorkflow()
+  const [permits, setPermits] = useState<WorkerPermit[]>([])
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'offline' | 'error'>('loading')
 
-  function choosePermit() {
-    setPermit('PTW-1001')
+  useEffect(() => {
+    let mounted = true
+    if (!workerAccessToken) {
+      setLoadState('offline')
+      return () => { mounted = false }
+    }
+    setLoadState('loading')
+    void fetchWorkerPermits(workerAccessToken)
+      .then((response) => {
+        if (!response.success || !response.data) throw new Error('Permit list could not be loaded.')
+        if (mounted) {
+          setPermits(response.data)
+          setLoadState('ready')
+        }
+      })
+      .catch(() => {
+        if (mounted) setLoadState('error')
+      })
+    return () => { mounted = false }
+  }, [workerAccessToken])
+
+  function choosePermit(permitNumber: string, recordId: number | null, taskType: string, workLocation: string) {
+    setPermit(permitNumber, recordId, taskType, workLocation)
     navigate('/worker/language')
   }
 
@@ -99,13 +127,28 @@ export function PermitPage() {
     <div className="narrow-page">
       <StepLabel step={2} total={7} label="Select permit" />
       <PageHeading eyebrow="YOUR ACTIVE WORK" title="Choose a permit." description="Only permits assigned to your demo worker appear here." />
-      <button className={`permit-card ${permitId === 'PTW-1001' ? 'selected' : ''}`} onClick={choosePermit} type="button">
-        <div className="permit-card-top"><Badge tone="success">Active</Badge><span className="permit-number">PTW-1001</span></div>
-        <h2>Equipment Maintenance</h2>
-        <div className="permit-details"><span>Location</span><strong>Pump House 04</strong><span>Worker</span><strong>WRK-1001 · Prem Demo Worker</strong></div>
-        <span className="permit-select"><span>Select this permit</span><ArrowRight size={17} /></span>
-      </button>
-      <p className="privacy-note"><ShieldAlert size={15} /> Demo permit only · not valid for real work.</p>
+      {loadState === 'loading' && <Panel><p className="field-hint">Loading active permits assigned to this worker…</p></Panel>}
+      {loadState === 'ready' && permits.length === 0 && <Panel><p className="field-hint">No active permits are assigned to this demo worker.</p></Panel>}
+      {loadState === 'ready' && permits.map((permit) => (
+        <button key={permit.id} className={`permit-card ${permitId === permit.permit_number ? 'selected' : ''}`} onClick={() => choosePermit(permit.permit_number, permit.id, permit.task_type, permit.work_location)} type="button">
+          <div className="permit-card-top"><Badge tone="success">Active</Badge><span className="permit-number">{permit.permit_number}</span></div>
+          <h2>{permit.task_type}</h2>
+          <div className="permit-details"><span>Location</span><strong>{permit.work_location}</strong><span>Worker</span><strong>{savedName || savedWorkerId}</strong></div>
+          <span className="permit-select"><span>Select this permit</span><ArrowRight size={17} /></span>
+        </button>
+      ))}
+      {(loadState === 'offline' || loadState === 'error') && (
+        <>
+          {loadState === 'error' && <p className="form-error" role="alert">The backend could not load permits. You can continue with the local demo preview; briefing progress will not be saved.</p>}
+          <button className={`permit-card ${permitId === 'PTW-1001' ? 'selected' : ''}`} onClick={() => choosePermit('PTW-1001', null, 'Equipment Maintenance', 'Pump House 04')} type="button">
+            <div className="permit-card-top"><Badge tone="warning">Preview only</Badge><span className="permit-number">PTW-1001</span></div>
+            <h2>Equipment Maintenance</h2>
+            <div className="permit-details"><span>Location</span><strong>Pump House 04</strong><span>Worker</span><strong>WRK-1001 · Prem Demo Worker</strong></div>
+            <span className="permit-select"><span>Continue in local preview</span><ArrowRight size={17} /></span>
+          </button>
+          {loadState === 'offline' && <p className="privacy-note"><ShieldAlert size={15} /> Demo permit preview only · not valid for work and not connected to a saved briefing.</p>}
+        </>
+      )}
       <Link to="/worker/login" className="back-link"><ArrowLeft size={16} /> Change worker</Link>
     </div>
   )
@@ -137,7 +180,7 @@ export function LanguagePage() {
 }
 
 export function WorkerHomePage() {
-  const { workerName, workerId, permitId, language, reportPreviewed } = useWorkflow()
+  const { workerName, workerId, permitId, permitTaskType, permitLocation, language, reportPreviewed } = useWorkflow()
   const firstName = workerName.split(' ')[0] || 'Worker'
 
   return (
@@ -153,7 +196,7 @@ export function WorkerHomePage() {
 
       <Panel className="active-permit-panel">
         <div className="active-permit-icon"><ClipboardCheck size={20} /></div>
-        <div className="active-permit-copy"><span>ACTIVE DEMO PERMIT</span><strong>{permitId || 'PTW-1001'} · Equipment Maintenance</strong><small>Pump House 04</small></div>
+        <div className="active-permit-copy"><span>ACTIVE DEMO PERMIT</span><strong>{permitId || 'PTW-1001'} · {permitTaskType || 'Equipment Maintenance'}</strong><small>{permitLocation || 'Pump House 04'}</small></div>
         <Badge tone="success">Active</Badge>
       </Panel>
 
@@ -175,9 +218,12 @@ export function WorkerHomePage() {
 }
 
 export function BriefingPage() {
-  const { language, workerAccessToken, permitId } = useWorkflow()
+  const { language, workerAccessToken, permitId, permitRecordId, permitTaskType, permitLocation } = useWorkflow()
   const [instruction, setInstruction] = useState<PublishedInstruction | null>(null)
-  const [instructionState, setInstructionState] = useState<'loading' | 'available' | 'missing' | 'offline' | 'error'>('loading')
+  const [briefing, setBriefing] = useState<BriefingBundle | null>(null)
+  const [instructionState, setInstructionState] = useState<'loading' | 'available' | 'missing' | 'preview' | 'error'>('loading')
+  const [savingState, setSavingState] = useState<'idle' | 'starting' | 'saving' | 'completing'>('idle')
+  const [actionError, setActionError] = useState('')
   const voiceLocale = languageOptions.find((item) => item.code === language)?.locale ?? 'ta-IN'
   const statusText = {
     ta: 'மேற்பார்வையாளர் அங்கீகரித்து வெளியிட்ட பிறகே பாதுகாப்பு வழிமுறைகள் காட்டப்படும். அங்கீகரிக்கப்படாத வழிமுறைகள் காட்டப்படாது.',
@@ -185,24 +231,60 @@ export function BriefingPage() {
     hi: 'सुरक्षा निर्देश केवल सुपरवाइज़र की मंज़ूरी और प्रकाशन के बाद दिखाए जाते हैं। बिना मंज़ूरी वाले निर्देश नहीं दिखाए जाते।',
   }[language]
 
+  async function beginBriefing() {
+    if (!workerAccessToken || permitRecordId === null) return
+    setActionError('')
+    setSavingState('starting')
+    try {
+      const response = await startBriefing(permitRecordId, language, workerAccessToken)
+      if (!response.success || !response.data) throw new Error('The briefing could not be started.')
+      setBriefing(response.data)
+      setInstruction(response.data.instruction)
+    } catch (error) {
+      setActionError(error instanceof ApiError ? error.message : 'The briefing could not be started. Ask the supervisor to check the published content.')
+    } finally {
+      setSavingState('idle')
+    }
+  }
+
+  async function saveProgress(reviewed: boolean) {
+    if (!workerAccessToken || !briefing) return
+    setActionError('')
+    setSavingState(reviewed ? 'completing' : 'saving')
+    try {
+      const currentStep = reviewed ? 100 : Math.max(briefing.briefing.current_step, 1)
+      const response = await saveBriefingProgress(briefing.briefing.id, currentStep, reviewed, workerAccessToken)
+      if (!response.success || !response.data) throw new Error('Progress could not be saved.')
+      setBriefing({ ...briefing, briefing: response.data })
+    } catch (error) {
+      setActionError(error instanceof ApiError ? error.message : 'Progress could not be saved. Check your connection and try again.')
+    } finally {
+      setSavingState('idle')
+    }
+  }
+
   useEffect(() => {
     let mounted = true
     setInstruction(null)
-    if (!workerAccessToken) {
-      setInstructionState('offline')
+    setBriefing(null)
+    if (!workerAccessToken || permitRecordId === null) {
+      setInstructionState('preview')
       return () => { mounted = false }
     }
     setInstructionState('loading')
     void (async () => {
       try {
-        const permitResponse = await fetchWorkerPermits(workerAccessToken)
-        if (!permitResponse.success || !permitResponse.data) throw new Error('Permits could not be loaded.')
-        const permit = permitResponse.data.find((item) => item.permit_number === permitId)
-        if (!permit || permit.status !== 'active') {
-          if (mounted) setInstructionState('missing')
+        const currentResponse = await fetchCurrentBriefing(permitRecordId, language, workerAccessToken)
+        if (!currentResponse.success) throw new Error('Saved briefing could not be loaded.')
+        if (currentResponse.data) {
+          if (mounted) {
+            setBriefing(currentResponse.data)
+            setInstruction(currentResponse.data.instruction)
+            setInstructionState('available')
+          }
           return
         }
-        const instructionResponse = await fetchPublishedInstructions(permit.id, language, workerAccessToken)
+        const instructionResponse = await fetchPublishedInstructions(permitRecordId, language, workerAccessToken)
         if (!instructionResponse.success || !instructionResponse.data) throw new Error('Instructions could not be loaded.')
         const latest = [...instructionResponse.data].sort((left, right) => right.version - left.version)[0] ?? null
         if (mounted) {
@@ -214,28 +296,28 @@ export function BriefingPage() {
       }
     })()
     return () => { mounted = false }
-  }, [language, permitId, workerAccessToken])
+  }, [language, permitRecordId, workerAccessToken])
 
   const instructionNotices: Record<LanguageCode, Record<typeof instructionState, string>> = {
     en: {
       loading: 'Checking for a published instruction linked to this permit and language…',
       available: 'This text is the published instruction for your active permit and selected language.',
       missing: 'No published instruction is available for this permit and language. Ask the supervisor for review.',
-      offline: 'Sign in to the backend to check for published content. No safety instruction is shown from an offline preview.',
+      preview: 'Sign in through the backend and select an assigned permit to load and save an approved briefing.',
       error: 'Approved content could not be loaded. Use the visible controls or ask the supervisor; no substitute instruction was created.',
     },
     ta: {
       loading: 'இந்த அனுமதி மற்றும் மொழிக்கான வெளியிடப்பட்ட வழிமுறை உள்ளதா எனச் சரிபார்க்கப்படுகிறது…',
       available: 'இந்த உரை உங்கள் செயலில் உள்ள அனுமதி மற்றும் தேர்ந்தெடுத்த மொழிக்கான வெளியிடப்பட்ட வழிமுறை.',
       missing: 'இந்த அனுமதி மற்றும் மொழிக்கான வெளியிடப்பட்ட வழிமுறை இல்லை. மேற்பார்வையாளரிடம் மதிப்பாய்வு கேளுங்கள்.',
-      offline: 'வெளியிடப்பட்ட உள்ளடக்கத்தைச் சரிபார்க்க பின்புற சேவையில் உள்நுழையவும். இணைப்பு இல்லாத முன்னோட்டத்தில் பாதுகாப்பு வழிமுறை காட்டப்படாது.',
+      preview: 'அங்கீகரிக்கப்பட்ட வழிமுறையை ஏற்றி சேமிக்க பின்புற சேவையில் உள்நுழைந்து ஒதுக்கப்பட்ட அனுமதியைத் தேர்ந்தெடுக்கவும்.',
       error: 'அங்கீகரிக்கப்பட்ட உள்ளடக்கத்தை ஏற்ற முடியவில்லை. திரைக் கட்டுப்பாடுகளைப் பயன்படுத்தவும் அல்லது மேற்பார்வையாளரிடம் கேளுங்கள்.',
     },
     hi: {
       loading: 'इस परमिट और भाषा से जुड़ा प्रकाशित निर्देश खोजा जा रहा है…',
       available: 'यह आपके सक्रिय परमिट और चुनी गई भाषा का प्रकाशित निर्देश है।',
       missing: 'इस परमिट और भाषा के लिए कोई प्रकाशित निर्देश नहीं है। समीक्षा के लिए सुपरवाइज़र से पूछें।',
-      offline: 'प्रकाशित सामग्री देखने के लिए बैकएंड में साइन इन करें। ऑफलाइन प्रीव्यू में कोई सुरक्षा निर्देश नहीं दिखाया जाता।',
+      preview: 'स्वीकृत निर्देश लोड करने और प्रगति सहेजने के लिए बैकएंड में साइन इन करें और अपना परमिट चुनें।',
       error: 'स्वीकृत सामग्री लोड नहीं हो सकी। स्क्रीन के विकल्प इस्तेमाल करें या सुपरवाइज़र से पूछें।',
     },
   }
@@ -243,9 +325,9 @@ export function BriefingPage() {
   return (
     <div className="narrow-page">
       <StepLabel step={4} total={7} label="Safety briefing" />
-      <PageHeading eyebrow="PTW-1001 · EQUIPMENT MAINTENANCE" title="Your safety briefing." description="Approved task instructions are checked for your permit and selected language." />
+      <PageHeading eyebrow={`${permitId || 'NO PERMIT'} · ${permitTaskType || 'TASK BRIEFING'}`} title="Your safety briefing." description={`Approved task instructions for ${permitLocation || 'your selected work location'} are checked in your selected language.`} />
       <Panel className="briefing-panel">
-        <div className="briefing-panel-header"><div className="panel-icon"><BookOpenCheck size={20} /></div><div><strong>{instruction?.title ?? 'Task-specific instruction'}</strong><span>Language · {languageOptions.find((item) => item.code === language)?.label}{instruction ? ` · version ${instruction.version}` : ''}</span></div><Badge tone={instruction ? 'success' : 'warning'}>{instruction ? 'Published' : 'Approval gate active'}</Badge></div>
+        <div className="briefing-panel-header"><div className="panel-icon"><BookOpenCheck size={20} /></div><div><strong>{instruction?.title ?? 'Task-specific instruction'}</strong><span>Language · {languageOptions.find((item) => item.code === language)?.label}{instruction ? ` · version ${instruction.version}` : ''}</span></div><Badge tone={instruction ? 'success' : 'warning'}>{briefing?.briefing.status === 'completed' ? 'Assessment complete' : briefing?.briefing.status === 'supervisor_review' ? 'Supervisor review' : briefing ? briefing.briefing.current_step >= 100 ? 'Reviewed' : briefing.briefing.current_step > 0 ? 'In progress' : 'Started' : instruction ? 'Published' : 'Approval gate active'}</Badge></div>
         {instruction ? (
           <div className="published-content-preview instruction-content"><strong>Published safety instruction · v{instruction.version}</strong><p>{instruction.content}</p></div>
         ) : (
@@ -253,9 +335,29 @@ export function BriefingPage() {
         )}
         <VoicePlayback text={instruction?.content ?? statusText} locale={voiceLocale} />
         <div className="briefing-footer-note">Text remains visible if speech output is unavailable.</div>
+        {instruction && !briefing && instructionState === 'available' && (
+          <button className="button button-primary button-full" type="button" onClick={() => void beginBriefing()} disabled={savingState !== 'idle'}>
+            {savingState === 'starting' ? 'Starting briefing…' : 'Start saved briefing'} <ArrowRight size={17} />
+          </button>
+        )}
+        {briefing && briefing.briefing.status !== 'completed' && briefing.briefing.status !== 'supervisor_review' && (
+          <div className="briefing-progress-actions">
+            <p className="field-hint">{briefing.briefing.current_step >= 100 ? 'Your review is saved. The understanding check can continue from this published version.' : briefing.briefing.current_step > 0 ? 'Your reading session is saved. Review the instruction, then mark it reviewed.' : 'This briefing is saved. You can leave and return to continue reading later.'}</p>
+            <div className="action-row">
+              <button className="button button-secondary" type="button" onClick={() => void saveProgress(false)} disabled={savingState !== 'idle' || briefing.briefing.current_step >= 100}>
+                {savingState === 'saving' ? 'Saving…' : 'Save reading progress'}
+              </button>
+              <button className="button button-primary" type="button" onClick={() => void saveProgress(true)} disabled={savingState !== 'idle' || briefing.briefing.current_step >= 100}>
+                {savingState === 'completing' ? 'Saving review…' : briefing.briefing.current_step >= 100 ? 'Review saved' : 'Mark instruction reviewed'} <CheckCircle2 size={17} />
+              </button>
+            </div>
+          </div>
+        )}
+        {briefing?.briefing.status === 'supervisor_review' && <p className="form-error" role="status">This briefing is waiting for supervisor review. Check with your supervisor before continuing.</p>}
+        {actionError && <p className="form-error" role="alert">{actionError}</p>}
       </Panel>
-      <VoiceCommandPanel locale={voiceLocale} language={language} accessToken={workerAccessToken} permitNumber={permitId} />
-      <div className="action-row"><Link className="button button-secondary" to="/worker/home"><ArrowLeft size={16} /> Home</Link><Link className="button button-primary" to="/worker/assessment">Continue <ArrowRight size={17} /></Link></div>
+      <VoiceCommandPanel locale={voiceLocale} language={language} accessToken={workerAccessToken} permitNumber={permitId} briefingSessionId={briefing?.briefing.id} />
+      <div className="action-row"><Link className="button button-secondary" to="/worker/home"><ArrowLeft size={16} /> Home</Link>{briefing?.briefing.current_step === 100 ? <Link className="button button-primary" to="/worker/assessment">Continue to understanding check <ArrowRight size={17} /></Link> : <Link className="button button-secondary" to="/worker/permit">Change permit</Link>}</div>
     </div>
   )
 }

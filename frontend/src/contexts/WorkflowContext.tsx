@@ -14,6 +14,9 @@ interface WorkflowState {
   workerName: string
   workerAccessToken: string
   permitId: string
+  permitRecordId: number | null
+  permitTaskType: string
+  permitLocation: string
   language: LanguageCode
   languageSelected: boolean
   supervisorAuthenticated: boolean
@@ -24,7 +27,7 @@ interface WorkflowState {
 
 interface WorkflowActions {
   setWorker: (workerId: string, workerName: string, accessToken?: string) => void
-  setPermit: (permitId: string) => void
+  setPermit: (permitId: string, recordId: number | null, taskType: string, workLocation: string) => void
   setLanguage: (language: LanguageCode) => void
   setSupervisorAuthenticated: (authenticated: boolean) => void
   updateHazardDraft: (draft: Partial<HazardDraft>) => void
@@ -37,6 +40,9 @@ const initialState: WorkflowState = {
   workerName: '',
   workerAccessToken: '',
   permitId: '',
+  permitRecordId: null,
+  permitTaskType: '',
+  permitLocation: '',
   language: 'ta',
   languageSelected: false,
   supervisorAuthenticated: false,
@@ -51,8 +57,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState(initialState)
   const value = useMemo<WorkflowState & WorkflowActions>(() => ({
     ...state,
-    setWorker: (workerId, workerName, workerAccessToken = '') => setState((current) => ({ ...current, workerId, workerName, workerAccessToken, permitId: '', languageSelected: false })),
-    setPermit: (permitId) => setState((current) => ({ ...current, permitId, languageSelected: false })),
+    setWorker: (workerId, workerName, workerAccessToken = '') => setState((current) => ({ ...current, workerId, workerName, workerAccessToken, permitId: '', permitRecordId: null, permitTaskType: '', permitLocation: '', languageSelected: false })),
+    setPermit: (permitId, permitRecordId, permitTaskType, permitLocation) => setState((current) => ({ ...current, permitId, permitRecordId, permitTaskType, permitLocation, languageSelected: false })),
     setLanguage: (language) => setState((current) => ({ ...current, language, languageSelected: true })),
     setSupervisorAuthenticated: (supervisorAuthenticated) => setState((current) => ({ ...current, supervisorAuthenticated })),
     updateHazardDraft: (draft) => setState((current) => ({

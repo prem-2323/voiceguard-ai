@@ -52,3 +52,7 @@ Faster-Whisper is an optional local fallback. The default backend does not insta
 ## Phase 5 multilingual intelligence
 
 Voice commands and hazard fields use deterministic Tamil, English, and Hindi phrase rules. Hazard suggestions stay editable and require confirmation; repeat requests can only return a published instruction matched to the worker's active permit and language. See [the Phase 5 behavior and limits](docs/phase-5-multilingual-intelligence.md).
+
+## Phase 6 worker briefing
+
+Workers can sign in with a demo account, select an assigned active permit, choose Tamil, English, or Hindi, and load the matching published instruction. Starting the briefing creates a saved session; reading progress and review status persist and can be resumed after signing in again. Repeated voice requests stay pinned to the instruction version in that session. No demo safety instruction is invented or seeded: the supervisor must approve and publish content before a worker can start a briefing. See [the Phase 6 worker flow](docs/phase-6-worker-briefing.md).
