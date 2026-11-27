@@ -2,7 +2,7 @@ import re
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -190,7 +190,7 @@ def list_instructions(db: Session = Depends(get_db), user: User = Depends(get_cu
     if user.role == UserRole.WORKER:
         if permit_id is None:
             raise HTTPException(status_code=422, detail="permit_id is required for workers")
-        permit = get_scoped_permit(db, user, permit_id)
+        permit = get_scoped_permit(db, user, permit_id, active=True)
         statement = statement.where(SafetyInstruction.task_type == permit.task_type,
                                     SafetyInstruction.approval_status == ApprovalStatus.PUBLISHED)
     else:
@@ -229,7 +229,14 @@ def get_instruction(instruction_id: int, db: Session = Depends(get_db), user: Us
     if instruction is None:
         raise HTTPException(status_code=404, detail="Instruction was not found")
     if user.role == UserRole.WORKER:
-        owns = db.scalar(select(Permit.id).where(Permit.worker_id == user.id, Permit.task_type == instruction.task_type))
+        now = utc_now()
+        owns = db.scalar(select(Permit.id).where(
+            Permit.worker_id == user.id,
+            Permit.task_type == instruction.task_type,
+            Permit.status == PermitStatus.ACTIVE,
+            Permit.valid_from <= now,
+            or_(Permit.valid_until.is_(None), Permit.valid_until >= now),
+        ))
         if not owns or instruction.approval_status != ApprovalStatus.PUBLISHED:
             raise HTTPException(status_code=404, detail="Published instruction was not found")
         return success(_worker_instruction(instruction))

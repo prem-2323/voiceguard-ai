@@ -1,4 +1,4 @@
-import { useCallback, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react'
 import {
   ArrowLeft,
   ArrowRight,
@@ -11,12 +11,22 @@ import {
   Languages,
   LifeBuoy,
   ShieldAlert,
+  Sparkles,
 } from 'lucide-react'
 import { Link, Navigate, useNavigate } from 'react-router-dom'
 import { Badge, PageHeading, Panel, StepLabel } from '../../components/ui'
 import { VoiceCapture, VoicePlayback } from '../../components/voice/VoiceControls'
-import { useWorkflow, type LanguageCode } from '../../contexts/WorkflowContext'
-import { ApiError, loginDemo } from '../../services/api'
+import { VoiceCommandPanel } from '../../components/voice/VoiceCommandPanel'
+import { useWorkflow, type HazardDraft, type LanguageCode } from '../../contexts/WorkflowContext'
+import {
+  ApiError,
+  fetchPublishedInstructions,
+  fetchWorkerPermits,
+  interpretVoice,
+  loginDemo,
+  type IntelligenceResult,
+  type PublishedInstruction,
+} from '../../services/api'
 
 const languageOptions: { code: LanguageCode; label: string; native: string; locale: string }[] = [
   { code: 'ta', label: 'Tamil', native: 'தமிழ்', locale: 'ta-IN' },
@@ -165,24 +175,86 @@ export function WorkerHomePage() {
 }
 
 export function BriefingPage() {
-  const { language } = useWorkflow()
+  const { language, workerAccessToken, permitId } = useWorkflow()
+  const [instruction, setInstruction] = useState<PublishedInstruction | null>(null)
+  const [instructionState, setInstructionState] = useState<'loading' | 'available' | 'missing' | 'offline' | 'error'>('loading')
   const voiceLocale = languageOptions.find((item) => item.code === language)?.locale ?? 'ta-IN'
   const statusText = {
-    ta: 'அங்கீகரிக்கப்பட்ட பாதுகாப்பு உள்ளடக்கம் இன்னும் வெளியிடப்படவில்லை. இந்தத் திரையில் செயல்பாட்டு பாதுகாப்பு வழிமுறைகள் இல்லை.',
-    en: 'Approved safety content is not published yet. This screen contains no operational safety instructions.',
-    hi: 'स्वीकृत सुरक्षा सामग्री अभी प्रकाशित नहीं है। इस स्क्रीन पर काम से जुड़ी कोई सुरक्षा हिदायत नहीं है।',
+    ta: 'மேற்பார்வையாளர் அங்கீகரித்து வெளியிட்ட பிறகே பாதுகாப்பு வழிமுறைகள் காட்டப்படும். அங்கீகரிக்கப்படாத வழிமுறைகள் காட்டப்படாது.',
+    en: 'Safety instructions are shown only after supervisor approval and publication. Unapproved instructions are not shown.',
+    hi: 'सुरक्षा निर्देश केवल सुपरवाइज़र की मंज़ूरी और प्रकाशन के बाद दिखाए जाते हैं। बिना मंज़ूरी वाले निर्देश नहीं दिखाए जाते।',
   }[language]
+
+  useEffect(() => {
+    let mounted = true
+    setInstruction(null)
+    if (!workerAccessToken) {
+      setInstructionState('offline')
+      return () => { mounted = false }
+    }
+    setInstructionState('loading')
+    void (async () => {
+      try {
+        const permitResponse = await fetchWorkerPermits(workerAccessToken)
+        if (!permitResponse.success || !permitResponse.data) throw new Error('Permits could not be loaded.')
+        const permit = permitResponse.data.find((item) => item.permit_number === permitId)
+        if (!permit || permit.status !== 'active') {
+          if (mounted) setInstructionState('missing')
+          return
+        }
+        const instructionResponse = await fetchPublishedInstructions(permit.id, language, workerAccessToken)
+        if (!instructionResponse.success || !instructionResponse.data) throw new Error('Instructions could not be loaded.')
+        const latest = [...instructionResponse.data].sort((left, right) => right.version - left.version)[0] ?? null
+        if (mounted) {
+          setInstruction(latest)
+          setInstructionState(latest ? 'available' : 'missing')
+        }
+      } catch {
+        if (mounted) setInstructionState('error')
+      }
+    })()
+    return () => { mounted = false }
+  }, [language, permitId, workerAccessToken])
+
+  const instructionNotices: Record<LanguageCode, Record<typeof instructionState, string>> = {
+    en: {
+      loading: 'Checking for a published instruction linked to this permit and language…',
+      available: 'This text is the published instruction for your active permit and selected language.',
+      missing: 'No published instruction is available for this permit and language. Ask the supervisor for review.',
+      offline: 'Sign in to the backend to check for published content. No safety instruction is shown from an offline preview.',
+      error: 'Approved content could not be loaded. Use the visible controls or ask the supervisor; no substitute instruction was created.',
+    },
+    ta: {
+      loading: 'இந்த அனுமதி மற்றும் மொழிக்கான வெளியிடப்பட்ட வழிமுறை உள்ளதா எனச் சரிபார்க்கப்படுகிறது…',
+      available: 'இந்த உரை உங்கள் செயலில் உள்ள அனுமதி மற்றும் தேர்ந்தெடுத்த மொழிக்கான வெளியிடப்பட்ட வழிமுறை.',
+      missing: 'இந்த அனுமதி மற்றும் மொழிக்கான வெளியிடப்பட்ட வழிமுறை இல்லை. மேற்பார்வையாளரிடம் மதிப்பாய்வு கேளுங்கள்.',
+      offline: 'வெளியிடப்பட்ட உள்ளடக்கத்தைச் சரிபார்க்க பின்புற சேவையில் உள்நுழையவும். இணைப்பு இல்லாத முன்னோட்டத்தில் பாதுகாப்பு வழிமுறை காட்டப்படாது.',
+      error: 'அங்கீகரிக்கப்பட்ட உள்ளடக்கத்தை ஏற்ற முடியவில்லை. திரைக் கட்டுப்பாடுகளைப் பயன்படுத்தவும் அல்லது மேற்பார்வையாளரிடம் கேளுங்கள்.',
+    },
+    hi: {
+      loading: 'इस परमिट और भाषा से जुड़ा प्रकाशित निर्देश खोजा जा रहा है…',
+      available: 'यह आपके सक्रिय परमिट और चुनी गई भाषा का प्रकाशित निर्देश है।',
+      missing: 'इस परमिट और भाषा के लिए कोई प्रकाशित निर्देश नहीं है। समीक्षा के लिए सुपरवाइज़र से पूछें।',
+      offline: 'प्रकाशित सामग्री देखने के लिए बैकएंड में साइन इन करें। ऑफलाइन प्रीव्यू में कोई सुरक्षा निर्देश नहीं दिखाया जाता।',
+      error: 'स्वीकृत सामग्री लोड नहीं हो सकी। स्क्रीन के विकल्प इस्तेमाल करें या सुपरवाइज़र से पूछें।',
+    },
+  }
 
   return (
     <div className="narrow-page">
       <StepLabel step={4} total={7} label="Safety briefing" />
-      <PageHeading eyebrow="PTW-1001 · EQUIPMENT MAINTENANCE" title="Your safety briefing." description="This screen will present the published instruction for your task." />
+      <PageHeading eyebrow="PTW-1001 · EQUIPMENT MAINTENANCE" title="Your safety briefing." description="Approved task instructions are checked for your permit and selected language." />
       <Panel className="briefing-panel">
-        <div className="briefing-panel-header"><div className="panel-icon"><BookOpenCheck size={20} /></div><div><strong>Task-specific instruction</strong><span>Language · {languageOptions.find((item) => item.code === language)?.label}</span></div><Badge tone="warning">Awaiting approval</Badge></div>
-        <div className="approval-notice"><ShieldAlert size={19} /><div><strong>Approved content is not published yet.</strong><p>This preview contains no operational safety instructions. Reviewed site content will appear here when it is approved.</p></div></div>
-        <VoicePlayback text={statusText} locale={voiceLocale} />
+        <div className="briefing-panel-header"><div className="panel-icon"><BookOpenCheck size={20} /></div><div><strong>{instruction?.title ?? 'Task-specific instruction'}</strong><span>Language · {languageOptions.find((item) => item.code === language)?.label}{instruction ? ` · version ${instruction.version}` : ''}</span></div><Badge tone={instruction ? 'success' : 'warning'}>{instruction ? 'Published' : 'Approval gate active'}</Badge></div>
+        {instruction ? (
+          <div className="published-content-preview instruction-content"><strong>Published safety instruction · v{instruction.version}</strong><p>{instruction.content}</p></div>
+        ) : (
+          <div className="approval-notice"><ShieldAlert size={19} /><div><strong>Safety content stays behind the approval gate.</strong><p>{instructionNotices[language][instructionState]}</p></div></div>
+        )}
+        <VoicePlayback text={instruction?.content ?? statusText} locale={voiceLocale} />
         <div className="briefing-footer-note">Text remains visible if speech output is unavailable.</div>
       </Panel>
+      <VoiceCommandPanel locale={voiceLocale} language={language} accessToken={workerAccessToken} permitNumber={permitId} />
       <div className="action-row"><Link className="button button-secondary" to="/worker/home"><ArrowLeft size={16} /> Home</Link><Link className="button button-primary" to="/worker/assessment">Continue <ArrowRight size={17} /></Link></div>
     </div>
   )
@@ -210,7 +282,44 @@ export function HazardReportPage() {
   const navigate = useNavigate()
   const { hazardDraft, updateHazardDraft, language, workerAccessToken } = useWorkflow()
   const [formError, setFormError] = useState('')
+  const [intelligence, setIntelligence] = useState<IntelligenceResult | null>(null)
+  const [interpreting, setInterpreting] = useState(false)
+  const [intelligenceMessage, setIntelligenceMessage] = useState('')
+  const interpretationRequest = useRef(0)
   const voiceLocale = languageOptions.find((item) => item.code === language)?.locale ?? 'ta-IN'
+
+  const analyzeHazardText = useCallback(async (text: string) => {
+    if (!text.trim()) return
+    if (!workerAccessToken) {
+      setIntelligence(null)
+      setIntelligenceMessage('Backend sign-in is unavailable. No fields were inferred; enter and review them manually.')
+      return
+    }
+    const requestId = interpretationRequest.current + 1
+    interpretationRequest.current = requestId
+    setInterpreting(true)
+    setIntelligenceMessage('Reviewing the report draft…')
+    try {
+      const response = await interpretVoice(text, language, workerAccessToken, 'hazard')
+      if (requestId !== interpretationRequest.current || !response.data) return
+      const result = response.data
+      setIntelligence(result)
+      setIntelligenceMessage(result.message)
+      if (result.intent === 'report_hazard') {
+        const suggestion: Partial<HazardDraft> = {}
+        if (result.hazard.suggested_category) suggestion.category = result.hazard.suggested_category
+        if (result.hazard.suggested_location) suggestion.location = result.hazard.suggested_location
+        if (Object.keys(suggestion).length) updateHazardDraft(suggestion)
+      }
+    } catch {
+      if (requestId === interpretationRequest.current) {
+        setIntelligence(null)
+        setIntelligenceMessage('Could not check this text. The transcript is still here; enter and review the fields manually.')
+      }
+    } finally {
+      if (requestId === interpretationRequest.current) setInterpreting(false)
+    }
+  }, [language, updateHazardDraft, workerAccessToken])
 
   const handleTranscript = useCallback((transcript: string) => {
     const previousDescription = hazardDraft.description.trim()
@@ -218,7 +327,8 @@ export function HazardReportPage() {
       transcript: [hazardDraft.transcript.trim(), transcript].filter(Boolean).join(' '),
       description: [previousDescription, transcript].filter(Boolean).join(' '),
     })
-  }, [hazardDraft.description, hazardDraft.transcript, updateHazardDraft])
+    void analyzeHazardText(transcript)
+  }, [analyzeHazardText, hazardDraft.description, hazardDraft.transcript, updateHazardDraft])
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -250,6 +360,18 @@ export function HazardReportPage() {
           <input id="hazard-location" className="text-field" value={hazardDraft.location} onChange={(event) => updateHazardDraft({ location: event.target.value })} placeholder="For example, Pump 4" required />
           <label className="field-label" htmlFor="hazard-description">Describe what you noticed</label>
           <textarea id="hazard-description" className="text-field text-area" value={hazardDraft.description} onChange={(event) => updateHazardDraft({ description: event.target.value })} placeholder="Share only what you observed. You can add details in your own words." required />
+          <button className="button button-secondary suggest-fields-button" type="button" disabled={!hazardDraft.description.trim() || interpreting} onClick={() => void analyzeHazardText(hazardDraft.description)}>
+            <Sparkles size={15} />{interpreting ? 'Checking text…' : 'Suggest category and location'}
+          </button>
+          {intelligenceMessage && (
+            <div className="intelligence-result" role="status" aria-live="polite">
+              <strong>{intelligence?.intent === 'report_hazard' ? 'Draft suggestions · review required' : intelligence?.intent === 'raise_sos' ? 'Simulated SOS command recognized' : intelligence?.intent === 'explain_simply' || intelligence?.intent === 'safety_question' ? 'Supervisor review required' : 'Voice command'}</strong>
+              <span>{intelligenceMessage}</span>
+              {intelligence?.intent === 'report_hazard' && (intelligence.hazard.suggested_category || intelligence.hazard.suggested_location) && <small>Suggested fields were placed in the form. Confirm or correct each one; nothing was submitted.</small>}
+              {intelligence?.intent === 'raise_sos' && <Link className="inline-action-link" to="/worker/sos">Open simulated SOS screen <ArrowRight size={14} /></Link>}
+              {intelligence?.requires_supervisor_review && <Badge tone="warning">No safety answer generated</Badge>}
+            </div>
+          )}
           <p className="field-hint">If a detail is uncertain, say so. The app will ask you to confirm the report.</p>
           {formError && <p className="form-error" role="alert">{formError}</p>}
           <button className="button button-primary button-full" type="submit">Review report details <ArrowRight size={17} /></button>

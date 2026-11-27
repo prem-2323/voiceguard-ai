@@ -36,6 +36,49 @@ export interface VoiceTranscription {
   language: 'en' | 'ta' | 'hi'
 }
 
+export type VoiceIntent = 'repeat_instruction' | 'explain_simply' | 'report_hazard' | 'raise_sos' | 'help' | 'safety_question' | 'unknown'
+
+export interface IntelligenceResult {
+  intent: VoiceIntent
+  confidence: 'high' | 'partial' | 'none'
+  hazard: {
+    suggested_category: 'oil_leak' | 'gas_alarm' | 'unsafe_scaffold' | null
+    suggested_location: string | null
+    ambiguous: boolean
+  }
+  requires_confirmation: boolean
+  requires_supervisor_review: boolean
+  approved_instruction: {
+    id: number
+    title: string
+    content: string
+    language: 'en' | 'ta' | 'hi'
+    version: number
+  } | null
+  message: string
+}
+
+export interface WorkerPermit {
+  id: number
+  permit_number: string
+  task_type: string
+  work_location: string
+  status: string
+  valid_from: string
+  valid_until: string | null
+}
+
+export interface PublishedInstruction {
+  id: number
+  task_type: string
+  title: string
+  content: string
+  language: 'en' | 'ta' | 'hi'
+  version: number
+  approval_status: 'published'
+  questions: { id: number; question: string; language: string; version: number }[]
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -99,6 +142,43 @@ export async function transcribeVoice(
   const response = await api.post<ApiEnvelope<VoiceTranscription>>('/voice/transcribe', body, {
     headers: { Authorization: `Bearer ${accessToken}` },
     timeout: 120_000,
+  })
+  return response.data
+}
+
+export async function interpretVoice(
+  text: string,
+  language: 'en' | 'ta' | 'hi',
+  accessToken: string,
+  context: 'general' | 'briefing' | 'hazard',
+  permitNumber?: string,
+): Promise<ApiEnvelope<IntelligenceResult>> {
+  const response = await api.post<ApiEnvelope<IntelligenceResult>>('/intelligence/interpret', {
+    text,
+    language,
+    context,
+    ...(permitNumber ? { permit_number: permitNumber } : {}),
+  }, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchWorkerPermits(accessToken: string): Promise<ApiEnvelope<WorkerPermit[]>> {
+  const response = await api.get<ApiEnvelope<WorkerPermit[]>>('/permits', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchPublishedInstructions(
+  permitId: number,
+  language: 'en' | 'ta' | 'hi',
+  accessToken: string,
+): Promise<ApiEnvelope<PublishedInstruction[]>> {
+  const response = await api.get<ApiEnvelope<PublishedInstruction[]>>('/instructions', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { permit_id: permitId, language },
   })
   return response.data
 }
