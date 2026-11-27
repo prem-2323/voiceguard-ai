@@ -66,7 +66,7 @@ export function WorkerLayout() {
 }
 
 export function SupervisorLayout() {
-  const { setSupervisorAuthenticated } = useWorkflow()
+  const { supervisorName, supervisorWorkerId, setSupervisorAuthenticated } = useWorkflow()
 
   return (
     <div className="supervisor-shell">
@@ -81,8 +81,8 @@ export function SupervisorLayout() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="supervisor-avatar">DS</div>
-          <div><strong>Demo Supervisor</strong><span>Demo account</span></div>
+          <div className="supervisor-avatar">{(supervisorName || 'DS').slice(0, 2).toUpperCase()}</div>
+          <div><strong>{supervisorName || 'Demo Supervisor'}</strong><span>{supervisorWorkerId || 'Demo account'}</span></div>
         </div>
       </aside>
       <div className="supervisor-main">

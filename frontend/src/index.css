@@ -483,3 +483,31 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
 }
+
+.section-live-state { display: flex; justify-content: flex-end; margin: -10px 0 18px; }
+.worker-status-panel { margin-top: 22px; }
+.worker-status-panel > .panel-heading { align-items: flex-start; }
+.worker-report-list, .supervisor-record-list { display: grid; gap: 12px; }
+.worker-report-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; padding: 14px; border: 1px solid #e8ebe3; border-radius: 12px; background: #fff; }
+.worker-report-row > div { display: grid; gap: 5px; min-width: 0; }
+.worker-report-row strong { color: var(--ink); font-size: 13px; text-transform: capitalize; }
+.worker-report-row small { color: var(--muted); font-size: 11px; }
+.supervisor-record-card { padding: 20px; }
+.supervisor-record-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 17px; }
+.supervisor-record-header h2 { margin: 5px 0 0; color: var(--ink); font-size: 19px; line-height: 1.35; }
+.supervisor-record-details { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 20px; margin: 0; }
+.supervisor-record-details > div { min-width: 0; }
+.supervisor-record-details dt { margin-bottom: 4px; color: var(--muted); font-size: 10px; font-weight: 760; letter-spacing: .65px; text-transform: uppercase; }
+.supervisor-record-details dd { margin: 0; color: var(--ink); font-size: 13px; line-height: 1.55; overflow-wrap: anywhere; }
+.supervisor-action-form { display: grid; justify-items: start; gap: 10px; margin-top: 18px; padding-top: 16px; border-top: 1px solid #e9ece5; }
+.supervisor-action-form .text-area { width: 100%; min-height: 84px; }
+.instruction-record { padding: 16px; border: 1px solid #e7eae2; border-radius: 13px; background: #fff; }
+.instruction-record > p { color: var(--muted); font-size: 12px; }
+.instruction-record-content { padding: 14px; border-radius: 10px; background: #f5f7f1; color: var(--ink); font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
+.instruction-record > small { display: block; margin-top: 10px; color: var(--muted); }
+
+@media (max-width: 680px) {
+  .supervisor-record-card { padding: 15px; }
+  .supervisor-record-details { grid-template-columns: 1fr; gap: 11px; }
+  .worker-report-row { padding: 11px; }
+}

@@ -20,10 +20,12 @@ import { Badge, PageHeading, Panel, StepLabel } from '../../components/ui'
 import { VoiceCapture, VoicePlayback } from '../../components/voice/VoiceControls'
 import { VoiceCommandPanel } from '../../components/voice/VoiceCommandPanel'
 import { useWorkflow, type HazardDraft, type LanguageCode } from '../../contexts/WorkflowContext'
+import { useLiveUpdates } from '../../services/realtime'
 import { useSpeechRecognition } from '../../services/speech'
 import {
   ApiError,
   createHazardReport,
+  fetchHazards,
   fetchBriefingAssessments,
   fetchBriefingSession,
   fetchCurrentBriefing,
@@ -193,8 +195,28 @@ export function LanguagePage() {
 }
 
 export function WorkerHomePage() {
-  const { workerName, workerId, permitId, permitTaskType, permitLocation, language, reportPreviewed } = useWorkflow()
+  const { workerName, workerId, workerAccessToken, permitId, permitTaskType, permitLocation, language, reportPreviewed } = useWorkflow()
+  const [hazardReports, setHazardReports] = useState<HazardReport[]>([])
+  const [hazardStatusError, setHazardStatusError] = useState('')
   const firstName = workerName.split(' ')[0] || 'Worker'
+
+  const refreshHazards = useCallback(async () => {
+    if (!workerAccessToken) {
+      setHazardReports([])
+      return
+    }
+    try {
+      const response = await fetchHazards(workerAccessToken)
+      if (!response.success || !response.data) throw new Error('Hazard status could not be loaded.')
+      setHazardReports(response.data)
+      setHazardStatusError('')
+    } catch (error) {
+      setHazardStatusError(error instanceof ApiError ? error.message : 'Hazard status could not be refreshed.')
+    }
+  }, [workerAccessToken])
+  const updateState = useLiveUpdates(workerAccessToken, refreshHazards)
+
+  useEffect(() => { void refreshHazards() }, [refreshHazards])
 
   return (
     <div className="worker-home-page">
@@ -225,6 +247,11 @@ export function WorkerHomePage() {
           <span className="journey-card-icon orange"><FileWarning size={21} /></span><span className="journey-card-copy"><strong>Report a hazard</strong><small>Share a concern by voice or text.</small></span><ArrowRight size={18} className="journey-arrow" />
         </Link>
       </div>
+      <Panel className="worker-status-panel">
+        <div className="journey-heading"><div><p className="eyebrow">YOUR REPORTS</p><h2>Hazard report status</h2></div><Badge tone={updateState === 'live' ? 'success' : 'info'}>{updateState === 'live' ? 'Live' : updateState === 'polling' ? 'Refreshing' : updateState === 'connecting' ? 'Connecting' : 'Offline'}</Badge></div>
+        {hazardStatusError && <p className="form-error" role="alert">{hazardStatusError}</p>}
+        {!workerAccessToken ? <p className="field-hint">Sign in through the backend to submit reports and see supervisor acknowledgements.</p> : hazardReports.length === 0 ? <p className="field-hint">No confirmed hazard reports are linked to this worker yet.</p> : <div className="worker-report-list">{hazardReports.slice(0, 3).map((report) => <div className="worker-report-row" key={report.id}><div><strong>{report.category.replaceAll('_', ' ')} · {report.location}</strong><small>Report #{report.id} · {new Date(report.created_at).toLocaleString()}</small>{report.acknowledged_at && <small>Acknowledged · {new Date(report.acknowledged_at).toLocaleString()}</small>}</div><Badge tone={report.status === 'acknowledged' ? 'success' : report.status === 'closed' ? 'neutral' : 'warning'}>{report.status}</Badge></div>)}</div>}
+      </Panel>
       <div className="safety-reminder"><ShieldAlert size={17} /><span>For an actual emergency, follow your site's emergency procedures immediately.</span></div>
     </div>
   )

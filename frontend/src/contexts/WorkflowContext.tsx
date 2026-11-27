@@ -21,6 +21,10 @@ interface WorkflowState {
   language: LanguageCode
   languageSelected: boolean
   supervisorAuthenticated: boolean
+  supervisorRecordId: number | null
+  supervisorName: string
+  supervisorWorkerId: string
+  supervisorAccessToken: string
   hazardDraft: HazardDraft
   reportPreviewed: boolean
   sosPreviewed: boolean
@@ -31,6 +35,7 @@ interface WorkflowActions {
   setPermit: (permitId: string, recordId: number | null, taskType: string, workLocation: string) => void
   setLanguage: (language: LanguageCode) => void
   setSupervisorAuthenticated: (authenticated: boolean) => void
+  setSupervisorSession: (recordId: number, workerId: string, name: string, accessToken: string) => void
   updateHazardDraft: (draft: Partial<HazardDraft>) => void
   setReportPreviewed: (previewed: boolean) => void
   setSosPreviewed: (previewed: boolean) => void
@@ -47,6 +52,10 @@ const initialState: WorkflowState = {
   language: 'ta',
   languageSelected: false,
   supervisorAuthenticated: false,
+  supervisorRecordId: null,
+  supervisorName: '',
+  supervisorWorkerId: '',
+  supervisorAccessToken: '',
   hazardDraft: { category: '', location: '', description: '', transcript: '', idempotencyKey: '' },
   reportPreviewed: false,
   sosPreviewed: false,
@@ -61,7 +70,8 @@ export function WorkflowProvider({ children }: { children: ReactNode }) {
     setWorker: (workerId, workerName, workerAccessToken = '') => setState((current) => ({ ...current, workerId, workerName, workerAccessToken, permitId: '', permitRecordId: null, permitTaskType: '', permitLocation: '', languageSelected: false, hazardDraft: { category: '', location: '', description: '', transcript: '', idempotencyKey: '' }, reportPreviewed: false })),
     setPermit: (permitId, permitRecordId, permitTaskType, permitLocation) => setState((current) => ({ ...current, permitId, permitRecordId, permitTaskType, permitLocation, languageSelected: false, hazardDraft: { ...current.hazardDraft, idempotencyKey: '' }, reportPreviewed: false })),
     setLanguage: (language) => setState((current) => ({ ...current, language, languageSelected: true })),
-    setSupervisorAuthenticated: (supervisorAuthenticated) => setState((current) => ({ ...current, supervisorAuthenticated })),
+    setSupervisorAuthenticated: (supervisorAuthenticated) => setState((current) => ({ ...current, supervisorAuthenticated, supervisorRecordId: supervisorAuthenticated ? current.supervisorRecordId : null, supervisorName: supervisorAuthenticated ? current.supervisorName : '', supervisorWorkerId: supervisorAuthenticated ? current.supervisorWorkerId : '', supervisorAccessToken: supervisorAuthenticated ? current.supervisorAccessToken : '' })),
+    setSupervisorSession: (supervisorRecordId, supervisorWorkerId, supervisorName, supervisorAccessToken) => setState((current) => ({ ...current, supervisorAuthenticated: true, supervisorRecordId, supervisorWorkerId, supervisorName, supervisorAccessToken })),
     updateHazardDraft: (draft) => setState((current) => ({
       ...current,
       hazardDraft: { ...current.hazardDraft, ...draft, idempotencyKey: 'idempotencyKey' in draft ? draft.idempotencyKey ?? '' : '' },

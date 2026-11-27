@@ -20,6 +20,23 @@ export interface DemoUser {
   preferred_language: 'en' | 'ta' | 'hi'
 }
 
+export interface SupervisorOverview {
+  assigned_workers: number
+  open_hazards: number
+  pending_assessments: number
+  open_simulated_sos: number
+}
+
+export interface SupervisorWorker extends DemoUser {
+  email: string | null
+  is_active: boolean
+  created_at: string
+}
+
+export interface SupervisorPermit extends WorkerPermit {
+  worker_id: number
+}
+
 export interface DemoAuthData {
   access_token: string
   token_type: 'bearer'
@@ -79,6 +96,21 @@ export interface PublishedInstruction {
   questions: { id: number; question: string; language: string; version: number }[]
 }
 
+export interface InstructionRecord extends Omit<PublishedInstruction, 'approval_status' | 'questions'> {
+  approval_status: 'draft' | 'approved' | 'published'
+  approved_by: number | null
+  published_at: string | null
+  created_at: string
+  questions: {
+    id: number
+    question: string
+    expected_answer: string
+    acceptable_answers: string[]
+    language: string
+    version: number
+  }[]
+}
+
 export interface BriefingSession {
   id: number
   worker_id: number
@@ -124,6 +156,35 @@ export interface HazardReport {
   created_at: string
 }
 
+export interface EmergencyRecord {
+  id: number
+  worker_id: number
+  permit_id: number | null
+  emergency_type: string
+  location: string | null
+  status: 'submitted' | 'acknowledged' | 'closed'
+  is_simulated: boolean
+  acknowledged_by: number | null
+  acknowledged_at: string | null
+  created_at: string
+}
+
+export interface AssessmentReviewRecord extends AssessmentResult {
+  question: string
+  expected_answer: string
+  acceptable_answers: string[]
+}
+
+export interface AuditEntry {
+  id: number
+  user_id: number | null
+  action: string
+  entity_type: string
+  entity_id: number | null
+  details: Record<string, unknown>
+  created_at: string
+}
+
 export class ApiError extends Error {
   readonly status: number
   readonly code: string
@@ -160,11 +221,11 @@ export async function fetchHealth(): Promise<ApiEnvelope<HealthData>> {
   return response.data
 }
 
-export async function loginDemo(workerId: string, password: string): Promise<ApiEnvelope<DemoAuthData>> {
+export async function loginDemo(workerId: string, password: string, role: 'worker' | 'supervisor' = 'worker'): Promise<ApiEnvelope<DemoAuthData>> {
   const response = await api.post<ApiEnvelope<DemoAuthData>>('/auth/demo-login', {
     worker_id: workerId,
     password,
-    role: 'worker',
+    role,
   })
   return response.data
 }
@@ -323,6 +384,99 @@ export async function createHazardReport(
       Authorization: `Bearer ${accessToken}`,
       'Idempotency-Key': idempotencyKey,
     },
+  })
+  return response.data
+}
+
+export async function fetchSupervisorOverview(accessToken: string): Promise<ApiEnvelope<SupervisorOverview>> {
+  const response = await api.get<ApiEnvelope<SupervisorOverview>>('/supervisor/overview', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchSupervisorWorkers(accessToken: string): Promise<ApiEnvelope<SupervisorWorker[]>> {
+  const response = await api.get<ApiEnvelope<SupervisorWorker[]>>('/workers', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchSupervisorPermits(accessToken: string): Promise<ApiEnvelope<SupervisorPermit[]>> {
+  const response = await api.get<ApiEnvelope<SupervisorPermit[]>>('/permits', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchHazards(accessToken: string): Promise<ApiEnvelope<HazardReport[]>> {
+  const response = await api.get<ApiEnvelope<HazardReport[]>>('/hazards', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function acknowledgeHazard(
+  hazardId: number,
+  accessToken: string,
+  note?: string,
+): Promise<ApiEnvelope<HazardReport>> {
+  const response = await api.post<ApiEnvelope<HazardReport>>(`/hazards/${hazardId}/acknowledge`,
+    note?.trim() ? { note: note.trim() } : undefined,
+    { headers: { Authorization: `Bearer ${accessToken}` } },
+  )
+  return response.data
+}
+
+export async function fetchSupervisorAssessments(
+  accessToken: string,
+  pendingReview = false,
+): Promise<ApiEnvelope<AssessmentReviewRecord[]>> {
+  const response = await api.get<ApiEnvelope<AssessmentReviewRecord[]>>('/assessments', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: pendingReview ? { pending_review: true } : {},
+  })
+  return response.data
+}
+
+export async function reviewAssessment(
+  assessmentId: number,
+  note: string,
+  accessToken: string,
+): Promise<ApiEnvelope<AssessmentResult>> {
+  const response = await api.post<ApiEnvelope<AssessmentResult>>(`/assessments/${assessmentId}/review`, { note }, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchSupervisorEmergencies(accessToken: string): Promise<ApiEnvelope<EmergencyRecord[]>> {
+  const response = await api.get<ApiEnvelope<EmergencyRecord[]>>('/emergency', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function acknowledgeEmergency(
+  emergencyId: number,
+  accessToken: string,
+): Promise<ApiEnvelope<EmergencyRecord>> {
+  const response = await api.post<ApiEnvelope<EmergencyRecord>>(`/emergency/${emergencyId}/acknowledge`, undefined, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchSupervisorInstructions(accessToken: string): Promise<ApiEnvelope<InstructionRecord[]>> {
+  const response = await api.get<ApiEnvelope<InstructionRecord[]>>('/instructions', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchAuditEntries(accessToken: string): Promise<ApiEnvelope<AuditEntry[]>> {
+  const response = await api.get<ApiEnvelope<AuditEntry[]>>('/audit', {
+    headers: { Authorization: `Bearer ${accessToken}` },
   })
   return response.data
 }

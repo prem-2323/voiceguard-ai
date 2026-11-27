@@ -31,6 +31,7 @@ from app.schemas import (
 )
 from app.services.audit import record_audit
 from app.services.authorization import get_scoped_permit, require_worker_access
+from app.services.events import notify_worker_and_supervisors
 
 router = APIRouter()
 
@@ -194,6 +195,7 @@ def update_permit_status(permit_id: int, payload: PermitStatusUpdate, db: Sessio
     record_audit(db, actor=user, action="permit_status_changed", entity_type="permit", entity_id=permit.id,
                  details={"status": payload.status.value})
     _commit(db)
+    notify_worker_and_supervisors(db, permit.worker_id, "permits.changed")
     return success(PermitRead.model_validate(permit))
 
 
@@ -435,6 +437,7 @@ def submit_assessment(session_id: int, payload: AssessmentSubmit, db: Session = 
                 briefing.status = BriefingStatus.COMPLETED
                 briefing.completed_at = utc_now()
     _commit(db)
+    notify_worker_and_supervisors(db, user.id, "assessments.changed")
     return success(AssessmentRead.model_validate(result), f"Answer recorded as {outcome.value}")
 
 
@@ -463,7 +466,23 @@ def list_assessments(db: Session = Depends(get_db), user: User = Depends(get_cur
         if pending_review:
             statement = statement.join(BriefingSession, BriefingSession.id == AssessmentResult.session_id).where(
                 BriefingSession.status == BriefingStatus.SUPERVISOR_REVIEW)
-    return success([AssessmentRead.model_validate(row) for row in db.scalars(statement).unique().all()])
+    rows = db.scalars(statement).unique().all()
+    if user.role == UserRole.WORKER:
+        return success([AssessmentRead.model_validate(row) for row in rows])
+    if pending_review:
+        latest: dict[tuple[int, int], AssessmentResult] = {}
+        for row in rows:
+            key = (row.session_id, row.question_id)
+            previous = latest.get(key)
+            if previous is None or row.attempt_count > previous.attempt_count:
+                latest[key] = row
+        rows = [row for row in latest.values() if row.reviewed_by is None]
+    return success([{
+        **AssessmentRead.model_validate(row).model_dump(mode="json"),
+        "question": row.question.question,
+        "expected_answer": row.question.expected_answer,
+        "acceptable_answers": row.question.acceptable_answers,
+    } for row in rows])
 
 
 @router.post("/assessments/{assessment_id}/review", tags=["assessments"])
@@ -475,6 +494,7 @@ def review_assessment(assessment_id: int, payload: ReviewRequest, db: Session = 
     record_audit(db, actor=user, action="assessment_reviewed", entity_type="assessment", entity_id=result.id,
                  details={"note": payload.note, "outcome": result.result.value})
     _commit(db)
+    notify_worker_and_supervisors(db, result.worker_id, "assessments.changed")
     return success(AssessmentRead.model_validate(result), "Assessment review recorded; no safety authorization is implied")
 
 
@@ -494,6 +514,7 @@ def create_hazard(payload: HazardCreate, idempotency_key: str = Header(alias="Id
     _flush(db)
     record_audit(db, actor=user, action="hazard_submitted", entity_type="hazard", entity_id=hazard.id)
     _commit(db)
+    notify_worker_and_supervisors(db, user.id, "hazards.changed")
     return success(HazardRead.model_validate(hazard), "Hazard report persisted")
 
 
@@ -536,6 +557,7 @@ def acknowledge_hazard(hazard_id: int, payload: HazardNoteCreate | None = None, 
         db.add(HazardNote(hazard_id=hazard.id, author_id=user.id, note=payload.note))
     record_audit(db, actor=user, action="hazard_acknowledged", entity_type="hazard", entity_id=hazard.id)
     _commit(db)
+    notify_worker_and_supervisors(db, hazard.worker_id, "hazards.changed")
     return success(HazardRead.model_validate(hazard), "Hazard acknowledgement persisted")
 
 
@@ -548,6 +570,7 @@ def add_hazard_note(hazard_id: int, payload: HazardNoteCreate, db: Session = Dep
     db.add(note)
     record_audit(db, actor=user, action="hazard_note_added", entity_type="hazard", entity_id=hazard.id)
     _commit(db)
+    notify_worker_and_supervisors(db, hazard.worker_id, "hazards.changed")
     return success(HazardNoteRead.model_validate(note), "Note saved")
 
 
@@ -569,6 +592,7 @@ def create_sos(payload: EmergencyCreate, db: Session = Depends(get_db), user: Us
     _flush(db)
     record_audit(db, actor=user, action="simulated_sos_created", entity_type="emergency", entity_id=record.id)
     _commit(db)
+    notify_worker_and_supervisors(db, user.id, "emergencies.changed")
     return success(EmergencyRead.model_validate(record), "Simulated SOS saved for the demo supervisor; no emergency services were contacted")
 
 
@@ -598,6 +622,7 @@ def acknowledge_sos(emergency_id: int, db: Session = Depends(get_db),
         record.acknowledged_at = utc_now()
         record_audit(db, actor=user, action="simulated_sos_acknowledged", entity_type="emergency", entity_id=record.id)
         _commit(db)
+        notify_worker_and_supervisors(db, record.worker_id, "emergencies.changed")
     return success(EmergencyRead.model_validate(record), "Simulated SOS acknowledgement persisted")
 
 

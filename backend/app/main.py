@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.health import router as health_router
 from app.api.intelligence import router as intelligence_router
+from app.api.realtime import router as realtime_router
 from app.api.workflows import router as workflows_router
 from app.api.voice import router as voice_router
 from app.core.config import settings
@@ -42,3 +43,4 @@ app.include_router(health_router, prefix="/api")
 app.include_router(workflows_router, prefix="/api")
 app.include_router(voice_router, prefix="/api")
 app.include_router(intelligence_router, prefix="/api")
+app.include_router(realtime_router, prefix="/api")
