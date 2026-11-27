@@ -1,0 +1,50 @@
+services:
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    environment:
+      APP_NAME: VoiceGuard AI API
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      DATABASE_URL: sqlite:////data/voiceguard.db
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:8080,http://127.0.0.1:8080}
+      JWT_SECRET: ${JWT_SECRET:-local-demo-secret-change-me}
+      JWT_ALGORITHM: HS256
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-60}
+      WHISPER_MODEL_PATH: ${WHISPER_MODEL_PATH:-}
+      WHISPER_MAX_AUDIO_MB: ${WHISPER_MAX_AUDIO_MB:-20}
+    volumes:
+      - voiceguard_data:/data
+    expose:
+      - "8000"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=3)"
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    restart: unless-stopped
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "${VOICEGUARD_PORT:-8080}:8080"
+    healthcheck:
+      test: [CMD-SHELL, "wget -qO- http://127.0.0.1:8080/ >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 5s
+    restart: unless-stopped
+
+volumes:
+  voiceguard_data:

@@ -80,3 +80,7 @@ cd backend
 uv sync --group dev
 uv run pytest -q
 ```
+
+## Phase 12 Docker Compose demo
+
+Run `docker compose up --build` from the project root, then open `http://localhost:8080`. SQLite persists in a named volume. The demo starts without paid AI credentials or a downloaded speech model. See [the Docker deployment notes](docs/phase-12-docker-deployment.md).
