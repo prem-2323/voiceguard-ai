@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Index, Integer, String
+from sqlalchemy import Boolean, ForeignKey, Index, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.database import Base
@@ -31,3 +31,15 @@ class EmergencyRecord(Base):
     worker: Mapped["User"] = relationship(back_populates="emergency_records", foreign_keys=[worker_id])
     permit: Mapped["Permit | None"] = relationship()
     acknowledger: Mapped["User | None"] = relationship(foreign_keys=[acknowledged_by])
+
+
+class EmergencyRequestKey(Base):
+    """Deduplicates worker retries after an ambiguous network result."""
+
+    __tablename__ = "emergency_request_keys"
+    __table_args__ = (UniqueConstraint("worker_id", "request_key", name="uq_emergency_request_worker_key"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    worker_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    request_key: Mapped[str] = mapped_column(String(100), nullable=False)
+    emergency_id: Mapped[int] = mapped_column(ForeignKey("emergency_records.id", ondelete="CASCADE"), unique=True, nullable=False)

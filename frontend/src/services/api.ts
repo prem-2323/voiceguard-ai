@@ -457,6 +457,24 @@ export async function fetchSupervisorEmergencies(accessToken: string): Promise<A
   return response.data
 }
 
+export async function fetchWorkerEmergencies(accessToken: string): Promise<ApiEnvelope<EmergencyRecord[]>> {
+  const response = await api.get<ApiEnvelope<EmergencyRecord[]>>('/emergency', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function createSimulatedSos(
+  accessToken: string,
+  payload: { permit_id: number | null; emergency_type: string; location: string | null },
+  idempotencyKey: string,
+): Promise<ApiEnvelope<EmergencyRecord>> {
+  const response = await api.post<ApiEnvelope<EmergencyRecord>>('/emergency/sos', payload, {
+    headers: { Authorization: `Bearer ${accessToken}`, 'Idempotency-Key': idempotencyKey },
+  })
+  return response.data
+}
+
 export async function acknowledgeEmergency(
   emergencyId: number,
   accessToken: string,

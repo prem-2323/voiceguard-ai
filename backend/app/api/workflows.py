@@ -1,8 +1,8 @@
 import unicodedata
 from datetime import UTC, datetime
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
@@ -13,7 +13,7 @@ from app.core.database import get_db
 from app.core.security import create_access_token, hash_password, verify_password
 from app.core.time import utc_now
 from app.models import (
-    AssessmentResult, AuditLog, BriefingSession, EmergencyRecord, HazardNote,
+    AssessmentResult, AuditLog, BriefingSession, EmergencyRecord, EmergencyRequestKey, HazardNote,
     HazardReport, Permit, SafetyInstruction, SafetyQuestion,
     SupervisorAssignment, User,
 )
@@ -583,15 +583,43 @@ def list_hazard_notes(hazard_id: int, db: Session = Depends(get_db), user: User 
 
 
 @router.post("/emergency/sos", status_code=status.HTTP_201_CREATED, tags=["simulated SOS"])
-def create_sos(payload: EmergencyCreate, db: Session = Depends(get_db), user: User = Depends(require_roles(UserRole.WORKER))):
+def create_sos(
+    payload: EmergencyCreate,
+    response: Response,
+    idempotency_key: Annotated[str, Header(alias="Idempotency-Key", min_length=16, max_length=100)],
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.WORKER)),
+):
+    existing_key = db.scalar(select(EmergencyRequestKey).where(
+        EmergencyRequestKey.worker_id == user.id,
+        EmergencyRequestKey.request_key == idempotency_key,
+    ))
+    if existing_key is not None:
+        response.status_code = status.HTTP_200_OK
+        return success(_get_or_404(db, EmergencyRecord, existing_key.emergency_id, "SOS record"),
+                       "Existing simulated SOS returned; no duplicate event was created")
+
     permit = get_scoped_permit(db, user, payload.permit_id, active=True) if payload.permit_id is not None else None
     record = EmergencyRecord(worker_id=user.id, permit_id=permit.id if permit else None,
                              emergency_type=payload.emergency_type, location=payload.location,
                              status=EmergencyStatus.SUBMITTED, is_simulated=True)
     db.add(record)
     _flush(db)
+    db.add(EmergencyRequestKey(worker_id=user.id, request_key=idempotency_key, emergency_id=record.id))
     record_audit(db, actor=user, action="simulated_sos_created", entity_type="emergency", entity_id=record.id)
-    _commit(db)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        existing_key = db.scalar(select(EmergencyRequestKey).where(
+            EmergencyRequestKey.worker_id == user.id,
+            EmergencyRequestKey.request_key == idempotency_key,
+        ))
+        if existing_key is not None:
+            response.status_code = status.HTTP_200_OK
+            return success(_get_or_404(db, EmergencyRecord, existing_key.emergency_id, "SOS record"),
+                           "Existing simulated SOS returned; no duplicate event was created")
+        raise HTTPException(status_code=409, detail="The simulated SOS conflicts with an existing request") from exc
     notify_worker_and_supervisors(db, user.id, "emergencies.changed")
     return success(EmergencyRead.model_validate(record), "Simulated SOS saved for the demo supervisor; no emergency services were contacted")
 

@@ -3,7 +3,7 @@
 from app.models.assessment import AssessmentResult
 from app.models.audit import AuditLog
 from app.models.briefing import BriefingSession
-from app.models.emergency import EmergencyRecord
+from app.models.emergency import EmergencyRecord, EmergencyRequestKey
 from app.models.hazard import HazardNote, HazardReport
 from app.models.instruction import SafetyInstruction, SafetyQuestion
 from app.models.permit import Permit
@@ -14,6 +14,7 @@ __all__ = [
     "AuditLog",
     "BriefingSession",
     "EmergencyRecord",
+    "EmergencyRequestKey",
     "HazardNote",
     "HazardReport",
     "Permit",

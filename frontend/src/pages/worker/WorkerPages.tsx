@@ -25,6 +25,8 @@ import { useSpeechRecognition } from '../../services/speech'
 import {
   ApiError,
   createHazardReport,
+  createSimulatedSos,
+  fetchWorkerEmergencies,
   fetchHazards,
   fetchBriefingAssessments,
   fetchBriefingSession,
@@ -39,6 +41,7 @@ import {
   type AssessmentResult,
   type BriefingBundle,
   type HazardReport,
+  type EmergencyRecord,
   type IntelligenceResult,
   type PublishedInstruction,
   type WorkerPermit,
@@ -733,21 +736,81 @@ export function HazardConfirmationPage() {
 }
 
 export function WorkerSosPage() {
-  const { workerId, sosPreviewed, setSosPreviewed } = useWorkflow()
+  const { workerId, workerAccessToken, permitRecordId, permitLocation, sosPreviewed, setSosPreviewed } = useWorkflow()
+  const [records, setRecords] = useState<EmergencyRecord[]>([])
+  const [loading, setLoading] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const [submitError, setSubmitError] = useState('')
+  const [savedMessage, setSavedMessage] = useState('')
+
+  const refresh = useCallback(async () => {
+    if (!workerAccessToken) return
+    try {
+      const response = await fetchWorkerEmergencies(workerAccessToken)
+      if (!response.success || !response.data) throw new Error('The SOS record list was not returned.')
+      setRecords(response.data)
+      setLoadError('')
+    } catch (cause) {
+      setLoadError(cause instanceof ApiError ? cause.message : 'SOS status could not be refreshed. Check the connection.')
+    }
+  }, [workerAccessToken])
+  const connectionState = useLiveUpdates(workerAccessToken, refresh)
+
+  useEffect(() => {
+    if (!workerAccessToken) return
+    setLoading(true)
+    void refresh().finally(() => setLoading(false))
+  }, [refresh, workerAccessToken])
+
+  async function submitSimulatedSos() {
+    if (!workerId) return
+    if (!workerAccessToken) {
+      setSosPreviewed(true)
+      setSavedMessage('Local preview only. No simulated event was sent or stored.')
+      return
+    }
+
+    setSubmitting(true)
+    setSubmitError('')
+    setSavedMessage('')
+    const storageKey = `voiceguard-sos-request:${workerId}`
+    const requestKey = sessionStorage.getItem(storageKey) || createIdempotencyKey()
+    sessionStorage.setItem(storageKey, requestKey)
+    try {
+      const response = await createSimulatedSos(workerAccessToken, {
+        permit_id: permitRecordId,
+        emergency_type: 'sos',
+        location: permitLocation || null,
+      }, requestKey)
+      if (!response.success || !response.data) throw new Error('The backend did not confirm the simulated SOS.')
+      sessionStorage.removeItem(storageKey)
+      setSavedMessage(`Simulated event #${response.data.id} saved for supervisor review.`)
+      setSosPreviewed(true)
+      await refresh()
+    } catch (cause) {
+      setSubmitError(cause instanceof ApiError ? cause.message : 'Could not confirm the SOS with the backend. Retry when connected; the retry will not create a duplicate event.')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   return (
     <div className="narrow-page sos-page">
-      <PageHeading eyebrow="EMERGENCY SUPPORT" title="SOS preview." description="The SOS control is designed to stay available throughout the worker journey." />
+      <PageHeading eyebrow="EMERGENCY SUPPORT" title="Simulated SOS." description="This demo event is recorded for the assigned supervisor; it does not contact responders." action={workerAccessToken ? <Badge tone={connectionState === 'live' ? 'success' : 'info'}>{connectionState === 'live' ? 'Live status' : connectionState === 'polling' ? 'Refreshing' : connectionState === 'connecting' ? 'Connecting' : 'Offline'}</Badge> : undefined} />
       <Panel className="sos-panel">
         <div className="sos-emblem"><LifeBuoy size={34} /></div>
         <Badge tone="danger">Simulation only</Badge>
-        <h2>{sosPreviewed ? 'Demo SOS preview is active.' : 'Use site emergency procedures now.'}</h2>
+        <h2>{sosPreviewed ? 'Demo SOS event recorded.' : 'Use site emergency procedures now.'}</h2>
         <p>This prototype does not contact emergency services or site responders. For an actual emergency, follow your site's emergency procedure immediately.</p>
         {!workerId && <p className="form-error">Sign in to preview an SOS linked to a demo worker.</p>}
-        <button className="button button-danger button-full" type="button" disabled={!workerId} onClick={() => setSosPreviewed(true)}>
-          <ShieldAlert size={18} />{sosPreviewed ? 'Preview active · not sent' : 'Preview simulated SOS'}
+        {submitError && <p className="form-error" role="alert">{submitError}</p>}
+        {savedMessage && <div className="inline-note" role="status"><CheckCircle2 size={17} /><span>{savedMessage}</span></div>}
+        <button className="button button-danger button-full" type="button" disabled={!workerId || submitting} onClick={() => void submitSimulatedSos()}>
+          <ShieldAlert size={18} />{submitting ? 'Saving simulated event…' : workerAccessToken ? 'Send simulated SOS' : 'Preview only · offline'}
         </button>
-        {sosPreviewed && <div className="inline-note"><CheckCircle2 size={17} /><span>Local screen preview only · no alert was sent or stored.</span></div>}
       </Panel>
+      {workerAccessToken && <Panel className="worker-status-panel sos-status-panel"><div className="journey-heading"><div><p className="eyebrow">SUPERVISOR FOLLOW-UP</p><h2>Simulated event status</h2></div><Badge tone={connectionState === 'live' ? 'success' : connectionState === 'polling' ? 'warning' : 'info'}>{connectionState === 'live' ? 'Live' : connectionState === 'polling' ? 'Refreshing' : connectionState === 'connecting' ? 'Connecting' : 'Offline'}</Badge></div>{loadError && <p className="form-error" role="alert">{loadError}</p>}{loading ? <p className="field-hint">Loading saved events…</p> : records.length === 0 ? <p className="field-hint">No simulated events have been confirmed for this worker.</p> : <div className="worker-report-list">{records.map((record) => <div className="worker-report-row" key={record.id}><div><strong>Simulated event #{record.id} · {record.location || 'Location not provided'}</strong><small>Saved · {new Date(record.created_at).toLocaleString()}</small>{record.acknowledged_at && <small>Supervisor acknowledgement · {new Date(record.acknowledged_at).toLocaleString()}</small>}</div><Badge tone={record.status === 'acknowledged' ? 'success' : record.status === 'closed' ? 'neutral' : 'warning'}>{record.status}</Badge></div>)}</div>}<p className="field-hint">A supervisor acknowledgement records receipt only; it is not an emergency dispatch.</p></Panel>}
       <Link className="back-link" to={workerId ? '/worker/home' : '/worker/login'}><ArrowLeft size={16} /> Return to worker journey</Link>
     </div>
   )
