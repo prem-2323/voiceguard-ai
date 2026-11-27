@@ -1,0 +1,1 @@
+"""VoiceGuard AI backend application."""
