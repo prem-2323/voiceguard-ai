@@ -21,6 +21,7 @@ import {
   fetchAuditEntries,
   fetchHazards,
   fetchSupervisorAssessments,
+  fetchSupervisorBriefings,
   fetchSupervisorEmergencies,
   fetchSupervisorInstructions,
   fetchSupervisorOverview,
@@ -34,6 +35,7 @@ import {
   type HazardReport,
   type InstructionRecord,
   type SupervisorOverview,
+  type SupervisorBriefing,
   type SupervisorPermit,
   type SupervisorWorker,
 } from '../../services/api'
@@ -124,6 +126,11 @@ const sectionData: Record<string, {
     description: 'Review draft and published content versions for the demonstration.',
     icon: ScrollText,
   },
+  briefings: {
+    title: 'Briefing sessions',
+    description: 'Review saved permit-linked briefing sessions and measured completion times.',
+    icon: BookOpenCheck,
+  },
   audit: {
     title: 'Audit history',
     description: 'Review supervisor actions and workflow events after integration.',
@@ -148,6 +155,43 @@ function formatTime(value: string | null | undefined) {
   return Number.isNaN(date.valueOf()) ? value : date.toLocaleString()
 }
 
+function formatDuration(seconds: number | null | undefined) {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds)) return '—'
+  if (seconds < 60) return `${Math.round(seconds)} sec`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = Math.round(seconds % 60)
+  return remainingSeconds ? `${minutes} min ${remainingSeconds} sec` : `${minutes} min`
+}
+
+function activityPath(entry: AuditEntry) {
+  if (entry.entity_type === 'hazard') return '/supervisor/hazards'
+  if (entry.entity_type === 'emergency') return '/supervisor/sos'
+  if (entry.entity_type === 'assessment') return '/supervisor/assessments'
+  if (entry.entity_type === 'briefing') return '/supervisor/briefings'
+  if (entry.entity_type === 'instruction') return '/supervisor/instructions'
+  return '/supervisor/audit'
+}
+
+function BriefingSessionList({ sessions }: { sessions: SupervisorBriefing[] }) {
+  if (sessions.length === 0) return <p className="field-hint">No saved briefing sessions yet.</p>
+  return <div className="briefing-session-list">{sessions.map((session) => (
+    <details className="briefing-session-detail" key={session.id}>
+      <summary>
+        <span><strong>Session #{session.id} · {session.worker_name}</strong><small>{session.permit_number} · {session.language.toUpperCase()} · {formatTime(session.started_at)}</small></span>
+        <Badge tone={statusTone(session.status)}>{session.status.replaceAll('_', ' ')}</Badge>
+      </summary>
+      <dl className="supervisor-record-details">
+        <div><dt>Instruction</dt><dd>{session.instruction_title} · version {session.instruction_version}</dd></div>
+        <div><dt>Permit</dt><dd>{session.permit_number} · {session.permit_id}</dd></div>
+        <div><dt>Progress</dt><dd>{session.current_step}%</dd></div>
+        <div><dt>Started</dt><dd>{formatTime(session.started_at)}</dd></div>
+        <div><dt>Completed</dt><dd>{formatTime(session.completed_at)}</dd></div>
+        <div><dt>Completion time</dt><dd>{formatDuration(session.duration_seconds)}</dd></div>
+      </dl>
+    </details>
+  ))}</div>
+}
+
 function statusTone(status: string): 'neutral' | 'success' | 'warning' | 'danger' | 'info' {
   if (status === 'acknowledged' || status === 'completed' || status === 'published' || status === 'correct' || status === 'active') return 'success'
   if (status === 'submitted' || status === 'supervisor_review' || status === 'draft' || status === 'in_progress' || status === 'incorrect' || status === 'unclear') return 'warning'
@@ -159,18 +203,26 @@ export function SupervisorOverviewPage() {
   const { supervisorAccessToken } = useWorkflow()
   const [overview, setOverview] = useState<SupervisorOverview | null>(null)
   const [activePermits, setActivePermits] = useState(0)
+  const [recentActivity, setRecentActivity] = useState<AuditEntry[]>([])
+  const [recentBriefings, setRecentBriefings] = useState<SupervisorBriefing[]>([])
   const [error, setError] = useState('')
 
   const refresh = useCallback(async () => {
     if (!supervisorAccessToken) return
     try {
-      const [summaryResponse, permitResponse] = await Promise.all([
+      const [summaryResponse, permitResponse, activityResponse, briefingResponse] = await Promise.all([
         fetchSupervisorOverview(supervisorAccessToken),
         fetchSupervisorPermits(supervisorAccessToken),
+        fetchAuditEntries(supervisorAccessToken),
+        fetchSupervisorBriefings(supervisorAccessToken, 8),
       ])
       const summary = requireData(summaryResponse, 'Supervisor overview')
       const permits = requireData(permitResponse, 'Permit list')
+      const activity = requireData(activityResponse, 'Recent activity')
+      const briefings = requireData(briefingResponse, 'Briefing sessions')
       setOverview(summary)
+      setRecentActivity(activity.slice(0, 6))
+      setRecentBriefings(briefings)
       const now = Date.now()
       setActivePermits(permits.filter((permit) => permit.status === 'active'
         && new Date(permit.valid_from).getTime() <= now
@@ -189,6 +241,8 @@ export function SupervisorOverviewPage() {
     { label: 'Active permits', value: overview ? String(activePermits).padStart(2, '0') : '—', hint: 'Currently in validity window', icon: ClipboardList },
     { label: 'Open hazard reports', value: overview ? String(overview.open_hazards).padStart(2, '0') : '—', hint: 'Awaiting acknowledgement', icon: FileWarning },
     { label: 'Reviews / SOS', value: overview ? `${overview.pending_assessments} / ${overview.open_simulated_sos}` : '—', hint: 'Supervisor attention', icon: BookOpenCheck },
+    { label: 'Briefings completed', value: overview ? String(overview.completed_briefings) : '—', hint: 'Saved completed sessions', icon: Activity },
+    { label: 'Average completion', value: overview ? formatDuration(overview.average_completion_seconds) : '—', hint: overview?.average_completion_seconds === null ? 'No completed sessions yet' : 'Calculated from saved timestamps', icon: ClipboardList },
   ]
 
   return (
@@ -198,9 +252,29 @@ export function SupervisorOverviewPage() {
       <div className="metric-grid">
         {metrics.map(({ label, value, hint, icon: Icon }) => <Panel className="metric-card" key={label}><span className="metric-icon"><Icon size={19} /></span><span className="metric-label">{label}</span><strong>{value}</strong><small>{hint}</small></Panel>)}
       </div>
+      <Panel className="assessment-outcomes-panel">
+        <div className="panel-heading"><div><p className="eyebrow">LATEST SAVED ANSWER PER QUESTION</p><h2>Assessment outcomes</h2></div><Badge tone="info">Assigned demo workers</Badge></div>
+        <div className="assessment-outcome-strip">
+          <span data-outcome="correct">Correct <strong>{overview?.correct_assessments ?? '—'}</strong></span>
+          <span data-outcome="incorrect">Incorrect <strong>{overview?.incorrect_assessments ?? '—'}</strong></span>
+          <span data-outcome="unclear">Unclear <strong>{overview?.unclear_assessments ?? '—'}</strong></span>
+          <span data-outcome="assistance">Assistance required <strong>{overview?.assistance_required ?? '—'}</strong></span>
+        </div>
+      </Panel>
       <div className="overview-grid">
         <Panel className="overview-panel"><div className="panel-heading"><div><p className="eyebrow">WORKER FLOW</p><h2>Review queues</h2></div><Badge tone={overview ? 'success' : 'neutral'}>{overview ? 'Connected' : 'Loading'}</Badge></div><div className="overview-empty"><span className="overview-empty-icon"><Activity size={20} /></span><div><strong>Supervisor actions are recorded.</strong><p>Hazard reports, unresolved assessments, simulated SOS events, acknowledgements, and audit history are stored in the demo database.</p></div></div></Panel>
         <Panel className="overview-panel quick-links"><div className="panel-heading"><div><p className="eyebrow">QUICK ACCESS</p><h2>Review workspace</h2></div></div><Link to="/supervisor/hazards" className="quick-link"><span className="quick-link-icon"><FileWarning size={17} /></span><span><strong>Hazard reports</strong><small>Review and acknowledge</small></span><ArrowRight size={16} /></Link><Link to="/supervisor/assessments" className="quick-link"><span className="quick-link-icon"><BookOpenCheck size={17} /></span><span><strong>Assessment review</strong><small>Follow up unresolved attempts</small></span><ArrowRight size={16} /></Link><Link to="/supervisor/sos" className="quick-link"><span className="quick-link-icon warm"><LifeBuoy size={17} /></span><span><strong>SOS monitoring</strong><small>Simulated events only</small></span><ArrowRight size={16} /></Link></Panel>
+      </div>
+      <div className="overview-detail-grid">
+        <Panel className="overview-panel recent-activity-panel">
+          <div className="panel-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>{recentActivity.length} saved event{recentActivity.length === 1 ? '' : 's'}</h2></div><Link to="/supervisor/audit" className="inline-action-link">Open audit history <ArrowRight size={14} /></Link></div>
+          {recentActivity.length ? <div className="recent-activity-list">{recentActivity.map((entry) => <Link className="recent-activity-link" to={activityPath(entry)} key={entry.id}><span><strong>{entry.action.replaceAll('_', ' ')}</strong><small>{entry.entity_type}{entry.entity_id ? ` #${entry.entity_id}` : ''} · {formatTime(entry.created_at)}</small></span><ArrowRight size={16} /></Link>)}</div> : <p className="field-hint">No saved activity is available yet.</p>}
+          <p className="field-hint">Activity links open the matching saved record queue. All records shown are fictional demo data.</p>
+        </Panel>
+        <Panel className="overview-panel recent-briefings-panel">
+          <div className="panel-heading"><div><p className="eyebrow">SESSION HISTORY</p><h2>Recent briefing sessions</h2></div><Link to="/supervisor/briefings" className="inline-action-link">View all <ArrowRight size={14} /></Link></div>
+          <BriefingSessionList sessions={recentBriefings} />
+        </Panel>
       </div>
       <div className="supervisor-safety-note"><ShieldAlert size={17} /><span>All records in this screen are synthetic. This console does not contact emergency services or authorize work.</span></div>
     </div>
@@ -216,6 +290,7 @@ export function SupervisorSectionPage() {
   const [hazards, setHazards] = useState<HazardReport[]>([])
   const [assessments, setAssessments] = useState<AssessmentReviewRecord[]>([])
   const [emergencies, setEmergencies] = useState<EmergencyRecord[]>([])
+  const [briefingSessions, setBriefingSessions] = useState<SupervisorBriefing[]>([])
   const [instructions, setInstructions] = useState<InstructionRecord[]>([])
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([])
   const [loading, setLoading] = useState(true)
@@ -250,6 +325,8 @@ export function SupervisorSectionPage() {
         setEmergencies(requireData(emergencyResponse, 'Simulated SOS records'))
         setWorkers(requireData(workerResponse, 'Workers'))
         setPermits(requireData(permitResponse, 'Permits'))
+      } else if (section === 'briefings') {
+        setBriefingSessions(requireData(await fetchSupervisorBriefings(supervisorAccessToken, 100), 'Briefing sessions'))
       } else if (section === 'instructions') {
         setInstructions(requireData(await fetchSupervisorInstructions(supervisorAccessToken), 'Safety instructions'))
       } else if (section === 'audit') {
@@ -307,6 +384,8 @@ export function SupervisorSectionPage() {
           {section === 'assessments' && <div className="supervisor-record-list">{assessments.length ? assessments.map((assessment) => <Panel className="supervisor-record-card" key={assessment.id}><div className="supervisor-record-header"><div><p className="eyebrow">SESSION #{assessment.session_id} · {workerName(assessment.worker_id)}</p><h2>{assessment.question}</h2></div><Badge tone={statusTone(assessment.result)}>{assessment.result} · {assessment.attempt_count}/3</Badge></div><dl className="supervisor-record-details"><div><dt>Permit</dt><dd>{permitNumber(assessment.permit_id)}</dd></div><div><dt>Worker answer</dt><dd>{assessment.worker_answer || 'No answer understood'}</dd></div><div><dt>Approved answer</dt><dd>{assessment.expected_answer}</dd></div>{assessment.acceptable_answers.length > 0 && <div><dt>Accepted variants</dt><dd>{assessment.acceptable_answers.join(' · ')}</dd></div>}<div><dt>Recorded</dt><dd>{formatTime(assessment.created_at)}</dd></div></dl><div className="supervisor-action-form"><label className="field-label" htmlFor={`assessment-note-${assessment.id}`}>Review note</label><textarea id={`assessment-note-${assessment.id}`} className="text-field text-area" value={notes[`assessment-${assessment.id}`] ?? ''} onChange={(event) => setNotes((current) => ({ ...current, [`assessment-${assessment.id}`]: event.target.value }))} maxLength={2000} placeholder="Record the review outcome or follow-up needed" /><button className="button button-primary" type="button" disabled={busyKey === `assessment-${assessment.id}`} onClick={() => void runAction(`assessment-${assessment.id}`, async () => { const response = await reviewAssessment(assessment.id, notes[`assessment-${assessment.id}`] ?? '', supervisorAccessToken); requireData(response, 'Review') })}>{busyKey === `assessment-${assessment.id}` ? 'Saving…' : 'Record review'}</button></div><p className="field-hint">Reviewing this item does not pass the assessment or authorize work. The session remains on hold.</p></Panel>) : <Panel><EmptyState icon={<BookOpenCheck size={22} />} title="No assessment reviews waiting" detail="A worker's third incorrect or unclear answer appears here for supervisor review." /></Panel>}</div>}
 
           {section === 'sos' && <div className="supervisor-record-list">{emergencies.length ? emergencies.map((emergency) => <Panel className="supervisor-record-card" key={emergency.id}><div className="supervisor-record-header"><div><p className="eyebrow">SIMULATED EVENT #{emergency.id} · {workerName(emergency.worker_id)}</p><h2>{emergency.emergency_type.toUpperCase()}</h2></div><Badge tone={statusTone(emergency.status)}>{emergency.status}</Badge></div><dl className="supervisor-record-details"><div><dt>Permit</dt><dd>{permitNumber(emergency.permit_id)}</dd></div><div><dt>Location</dt><dd>{emergency.location || 'Not provided'}</dd></div><div><dt>Received</dt><dd>{formatTime(emergency.created_at)}</dd></div>{emergency.acknowledged_at && <div><dt>Acknowledged</dt><dd>{formatTime(emergency.acknowledged_at)}</dd></div>}</dl>{emergency.status === 'submitted' && <button className="button button-primary" type="button" disabled={busyKey === `sos-${emergency.id}`} onClick={() => void runAction(`sos-${emergency.id}`, async () => { const response = await acknowledgeEmergency(emergency.id, supervisorAccessToken); setEmergencies((current) => current.map((item) => item.id === emergency.id ? requireData(response, 'SOS acknowledgement') : item)) })}>{busyKey === `sos-${emergency.id}` ? 'Saving…' : 'Acknowledge simulated event'}</button>}<p className="field-hint">Simulation only. No emergency call or dispatch was placed.</p></Panel>) : <Panel><EmptyState icon={<LifeBuoy size={22} />} title="No simulated SOS events" detail="Worker-created demo events will appear here." /></Panel>}</div>}
+
+          {section === 'briefings' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">PERMIT-LINKED SESSIONS</p><h2>{briefingSessions.length} saved session{briefingSessions.length === 1 ? '' : 's'}</h2></div><Badge tone="info">Fictional demo data</Badge></div><BriefingSessionList sessions={briefingSessions} /></Panel>}
 
           {section === 'instructions' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">ASSIGNED TASK CONTENT</p><h2>{instructions.length} version{instructions.length === 1 ? '' : 's'}</h2></div><Badge tone="warning">Approval gated</Badge></div>{instructions.length ? <div className="supervisor-record-list">{instructions.map((instruction) => <article className="instruction-record" key={instruction.id}><div className="supervisor-record-header"><div><p className="eyebrow">{instruction.language.toUpperCase()} · VERSION {instruction.version}</p><h2>{instruction.title}</h2></div><Badge tone={statusTone(instruction.approval_status)}>{instruction.approval_status}</Badge></div><p>{instruction.task_type}</p><div className="instruction-record-content">{instruction.content}</div><small>{instruction.questions.length} question{instruction.questions.length === 1 ? '' : 's'} · created {formatTime(instruction.created_at)}</small></article>)}</div> : <EmptyState icon={<ScrollText size={22} />} title="No instructions available" detail="Versioned content for assigned workers will appear here." />}<div className="supervisor-safety-note"><ShieldAlert size={17} /><span>Draft or approved content is not shown to workers. Only published, supervisor-approved versions can start a briefing.</span></div></Panel>}
 

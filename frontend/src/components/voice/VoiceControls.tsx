@@ -34,7 +34,7 @@ export function VoiceCapture({
   const streamRef = useRef<MediaStream | null>(null)
   const chunksRef = useRef<Blob[]>([])
   const mountedRef = useRef(true)
-  const { supported, listening, interimTranscript, error, start, stop } = useSpeechRecognition(locale, (text) => {
+  const { supported, listening, processing, interimTranscript, error, start, stop } = useSpeechRecognition(locale, (text) => {
     setHeardText(text)
     onTranscript(text)
   })
@@ -163,10 +163,13 @@ export function VoiceCapture({
           </button>
         )}
         <div className="mic-copy">
-          <strong>{listening ? 'Listening…' : 'Speak your observation'}</strong>
-          <span>{supported ? `Browser speech · ${locale}` : 'Browser speech recognition is unavailable. Text entry remains available.'}</span>
+          <strong>{recordingState === 'requesting' ? 'Requesting microphone…'
+            : recordingState === 'recording' ? 'Recording…'
+              : recordingState === 'transcribing' || processing ? 'Processing speech…'
+                : listening ? 'Listening…' : 'Speak your observation'}</strong>
+          <span>{supported ? `Browser speech recognition · ${locale}` : 'Browser speech recognition is unavailable. Text entry remains available.'}</span>
         </div>
-        <span className={`recording-indicator ${listening || recordingState === 'recording' ? 'active' : ''}`} />
+        <span className={`recording-indicator ${listening || processing || recordingState === 'recording' ? 'active' : ''}`} />
       </div>
 
       {canRecord && accessToken && whisperAvailable && (
@@ -205,24 +208,27 @@ export function VoiceCapture({
 }
 
 export function VoicePlayback({ text, locale }: { text: string; locale: string }) {
-  const { supported, speaking, speak, stop } = useSpeechPlayback(text, locale)
+  const { supported, speaking, error, speak, stop } = useSpeechPlayback(text, locale)
   return (
-    <div className={`voice-preview ${speaking ? 'is-previewing' : ''}`}>
-      <button
-        type="button"
-        className="voice-preview-button"
-        aria-label={speaking ? 'Stop speech playback' : 'Read visible message aloud'}
-        aria-pressed={speaking}
-        disabled={!supported}
-        onClick={speaking ? stop : speak}
-      >
-        {speaking ? <Square size={18} /> : <Volume2 size={20} />}
-      </button>
-      <div>
-        <strong>{speaking ? 'Speaking…' : supported ? 'Read this message aloud' : 'Speech playback unavailable'}</strong>
-        <span>{supported ? `Text stays visible · voice locale ${locale}` : 'The written message remains available on screen.'}</span>
+    <>
+      <div className={`voice-preview ${speaking ? 'is-previewing' : ''}`}>
+        <button
+          type="button"
+          className="voice-preview-button"
+          aria-label={speaking ? 'Stop speech playback' : 'Read visible message aloud'}
+          aria-pressed={speaking}
+          disabled={!supported}
+          onClick={speaking ? stop : speak}
+        >
+          {speaking ? <Square size={18} /> : <Volume2 size={20} />}
+        </button>
+        <div>
+          <strong>{speaking ? 'Speaking…' : supported ? 'Read this message aloud' : 'Speech playback unavailable'}</strong>
+          <span>{supported ? `Text stays visible · voice locale ${locale}` : `No ${locale} speech voice is available here. The written message remains visible.`}</span>
+        </div>
+        <span className="voice-state-dot" />
       </div>
-      <span className="voice-state-dot" />
-    </div>
+      {error && <p className="form-error voice-error" role="alert">{error}</p>}
+    </>
   )
 }

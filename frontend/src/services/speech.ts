@@ -1,6 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-function recognitionConstructor() {
+export interface SpeechRecognitionCallbacks {
+  onFinalTranscript: (text: string) => void
+  onInterimTranscript: (text: string) => void
+  onError: (message: string) => void
+  onEnd: () => void
+}
+
+export interface SpeechRecognitionSession {
+  start: () => void
+  stop: () => void
+  abort: () => void
+}
+
+export interface SpeechRecognitionProvider {
+  isSupported: () => boolean
+  create: (locale: string, callbacks: SpeechRecognitionCallbacks) => SpeechRecognitionSession | null
+}
+
+function recognitionConstructor(): VoiceRecognitionConstructor | undefined {
   if (typeof window === 'undefined') return undefined
   return window.SpeechRecognition ?? window.webkitSpeechRecognition
 }
@@ -17,30 +35,12 @@ function recognitionErrorMessage(code: string) {
   return messages[code] ?? 'Speech recognition stopped. You can try again or enter the report as text.'
 }
 
-export function useSpeechRecognition(locale: string, onFinalTranscript: (text: string) => void) {
-  const [supported] = useState(() => Boolean(recognitionConstructor()))
-  const [listening, setListening] = useState(false)
-  const [interimTranscript, setInterimTranscript] = useState('')
-  const [error, setError] = useState('')
-  const recognitionRef = useRef<VoiceRecognition | null>(null)
-  const callbackRef = useRef(onFinalTranscript)
-
-  useEffect(() => {
-    callbackRef.current = onFinalTranscript
-  }, [onFinalTranscript])
-
-  const stop = useCallback(() => {
-    recognitionRef.current?.stop()
-  }, [])
-
-  const start = useCallback(() => {
+export const webSpeechRecognitionProvider: SpeechRecognitionProvider = {
+  isSupported: () => Boolean(recognitionConstructor()),
+  create: (locale, callbacks) => {
     const Constructor = recognitionConstructor()
-    if (!Constructor) {
-      setError('Browser speech recognition is unavailable. You can still enter the report as text.')
-      return
-    }
-    setError('')
-    setInterimTranscript('')
+    if (!Constructor) return null
+
     const recognition = new Constructor()
     recognition.lang = locale
     recognition.continuous = false
@@ -56,31 +56,87 @@ export function useSpeechRecognition(locale: string, onFinalTranscript: (text: s
         if (result.isFinal) finalParts.push(transcript)
         else interimParts.push(transcript)
       }
-      setInterimTranscript(interimParts.join(' '))
+      callbacks.onInterimTranscript(interimParts.join(' '))
       const finalText = finalParts.join(' ').trim()
-      if (finalText) {
-        setInterimTranscript('')
-        callbackRef.current(finalText)
-      }
+      if (finalText) callbacks.onFinalTranscript(finalText)
     }
     recognition.onerror = (event) => {
-      if (event.error !== 'aborted') setError(recognitionErrorMessage(event.error))
-      setListening(false)
+      if (event.error !== 'aborted') callbacks.onError(recognitionErrorMessage(event.error))
     }
-    recognition.onend = () => setListening(false)
+    recognition.onend = callbacks.onEnd
+    return {
+      start: () => recognition.start(),
+      stop: () => recognition.stop(),
+      abort: () => recognition.abort(),
+    }
+  },
+}
+
+export function useSpeechRecognition(
+  locale: string,
+  onFinalTranscript: (text: string) => void,
+  provider: SpeechRecognitionProvider = webSpeechRecognitionProvider,
+) {
+  const supported = provider.isSupported()
+  const [listening, setListening] = useState(false)
+  const [processing, setProcessing] = useState(false)
+  const [interimTranscript, setInterimTranscript] = useState('')
+  const [error, setError] = useState('')
+  const recognitionRef = useRef<SpeechRecognitionSession | null>(null)
+  const callbackRef = useRef(onFinalTranscript)
+
+  useEffect(() => {
+    callbackRef.current = onFinalTranscript
+  }, [onFinalTranscript])
+
+  const stop = useCallback(() => {
+    recognitionRef.current?.stop()
+  }, [])
+
+  const start = useCallback(() => {
+    if (!provider.isSupported()) {
+      setError('Browser speech recognition is unavailable. You can still enter the report as text.')
+      return
+    }
+    setError('')
+    setInterimTranscript('')
+    setProcessing(false)
+    recognitionRef.current?.abort()
+    const recognition = provider.create(locale, {
+      onFinalTranscript: (text) => {
+        setInterimTranscript('')
+        setProcessing(true)
+        callbackRef.current(text)
+      },
+      onInterimTranscript: setInterimTranscript,
+      onError: (message) => {
+        setError(message)
+        setListening(false)
+        setProcessing(false)
+      },
+      onEnd: () => {
+        setListening(false)
+        setProcessing(false)
+      },
+    })
+    if (!recognition) {
+      setError('Browser speech recognition is unavailable. You can still enter the report as text.')
+      return
+    }
     recognitionRef.current = recognition
     try {
       recognition.start()
       setListening(true)
     } catch {
       setListening(false)
+      setProcessing(false)
       setError('The microphone could not start. Try again or enter the report as text.')
     }
-  }, [locale])
+  }, [locale, provider])
 
   useEffect(() => () => recognitionRef.current?.abort(), [])
 
-  return { supported, listening, interimTranscript, error, start, stop, clearError: () => setError('') }
+  return { supported, listening, processing, interimTranscript, error, start, stop, clearError: () => setError('') }
 }
 
 function speechChunks(text: string, maximumLength = 180) {
@@ -100,9 +156,26 @@ function speechChunks(text: string, maximumLength = 180) {
   return chunks
 }
 
+function matchingSpeechVoice(locale: string) {
+  if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null
+  const language = locale.toLowerCase().split('-')[0]
+  return window.speechSynthesis.getVoices().find((voice) => voice.lang.toLowerCase().split('-')[0] === language) ?? null
+}
+
 export function useSpeechPlayback(text: string, locale: string) {
-  const [supported] = useState(() => typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window)
+  const speechApiAvailable = typeof window !== 'undefined' && 'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
+  const [voice, setVoice] = useState(() => matchingSpeechVoice(locale))
   const [speaking, setSpeaking] = useState(false)
+  const [error, setError] = useState('')
+  const supported = speechApiAvailable && voice !== null
+
+  useEffect(() => {
+    if (!speechApiAvailable) return
+    const refreshVoices = () => setVoice(matchingSpeechVoice(locale))
+    refreshVoices()
+    window.speechSynthesis.addEventListener('voiceschanged', refreshVoices)
+    return () => window.speechSynthesis.removeEventListener('voiceschanged', refreshVoices)
+  }, [locale, speechApiAvailable])
 
   const stop = useCallback(() => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel()
@@ -110,7 +183,19 @@ export function useSpeechPlayback(text: string, locale: string) {
   }, [])
 
   const speak = useCallback(() => {
-    if (!supported || !text.trim()) return
+    if (!speechApiAvailable) {
+      setError('The browser speech synthesis API is unavailable.')
+      return
+    }
+    if (!voice) {
+      setError(`No installed speech voice is available for ${locale}.`)
+      return
+    }
+    if (!text.trim()) {
+      setError('There is no text to speak.')
+      return
+    }
+    setError('')
     window.speechSynthesis.cancel()
     const chunks = speechChunks(text)
     let remaining = chunks.length
@@ -118,22 +203,26 @@ export function useSpeechPlayback(text: string, locale: string) {
     for (const chunk of chunks) {
       const utterance = new SpeechSynthesisUtterance(chunk)
       utterance.lang = locale
+      utterance.voice = voice
       utterance.rate = 0.92
       utterance.onend = () => {
         remaining -= 1
         if (remaining <= 0) setSpeaking(false)
       }
-      utterance.onerror = () => {
+      utterance.onerror = (event) => {
         remaining = 0
         setSpeaking(false)
+        if (event.error !== 'canceled' && event.error !== 'interrupted') {
+          setError(`Speech playback failed (${event.error || 'unknown error'}).`)
+        }
       }
       window.speechSynthesis.speak(utterance)
     }
-  }, [locale, supported, text])
+  }, [locale, speechApiAvailable, text, voice])
 
   useEffect(() => () => {
     if (typeof window !== 'undefined' && 'speechSynthesis' in window) window.speechSynthesis.cancel()
   }, [])
 
-  return { supported, speaking, speak, stop }
+  return { supported, speaking, error, speak, stop, clearError: () => setError('') }
 }

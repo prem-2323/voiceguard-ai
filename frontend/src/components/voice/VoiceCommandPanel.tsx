@@ -64,7 +64,7 @@ export function VoiceCommandPanel({
     setCommandText(text)
     void interpret(text)
   }, [interpret])
-  const { supported, listening, interimTranscript, start, stop } = useSpeechRecognition(locale, handleVoiceCommand)
+  const { supported, listening, interimTranscript, error: speechError, start, stop } = useSpeechRecognition(locale, handleVoiceCommand)
 
   const reviewNeeded = result?.requires_supervisor_review
     || (result?.intent === 'repeat_instruction' && !result.approved_instruction)
@@ -110,6 +110,7 @@ export function VoiceCommandPanel({
       </div>
       {(interimTranscript || listening) && <p className="command-listening" role="status">{interimTranscript || 'Listening for one command…'}</p>}
       {!supported && <p className="voice-engine-note">Browser speech recognition is unavailable. Type a command or use the buttons on screen.</p>}
+      {speechError && <p className="form-error" role="alert">{speechError}</p>}
       {error && <p className="form-error" role="alert">{error}</p>}
       {result && (
         <div className="command-result" role="status" aria-live="polite">

@@ -183,11 +183,12 @@ class ReviewRequest(BaseModel):
 
 
 class HazardCreate(BaseModel):
-    permit_id: int | None = None
+    permit_id: int
     category: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80)]
     description: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=6000)]
     location: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=180)]
     transcript: Annotated[str, StringConstraints(max_length=6000)] | None = None
+    confirmed: Literal[True]
 
 
 class HazardRead(ORMModel):
@@ -250,6 +251,29 @@ class SupervisorOverview(BaseModel):
     open_hazards: int
     pending_assessments: int
     open_simulated_sos: int
+    completed_briefings: int
+    average_completion_seconds: float | None
+    correct_assessments: int
+    incorrect_assessments: int
+    unclear_assessments: int
+    assistance_required: int
+
+
+class SupervisorBriefingRead(BaseModel):
+    id: int
+    worker_id: int
+    worker_name: str
+    permit_id: int
+    permit_number: str
+    instruction_id: int
+    instruction_title: str
+    instruction_version: int
+    language: str
+    status: BriefingStatus
+    current_step: int
+    started_at: datetime
+    completed_at: datetime | None
+    duration_seconds: int | None
 
 
 def success(data: object = None, message: str = "OK") -> dict[str, object]:

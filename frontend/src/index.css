@@ -292,6 +292,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .sidebar-bottom span { color: #b9c9bc; font-size: 9px; }
 .supervisor-main { min-width: 0; display: flex; flex-direction: column; }
 .supervisor-topbar { min-height: 68px; display: flex; align-items: center; justify-content: flex-end; gap: 16px; padding: 0 35px; border-bottom: 1px solid #e5e4da; background: rgba(255,253,248,.78); }
+.pwa-install-button { min-height: 36px; padding: 0 11px; font-size: 10px; }
 .mobile-brand { display: none; }
 .demo-banner { min-height: 33px; display: inline-flex; align-items: center; gap: 7px; padding: 0 10px; border: 1px solid #e7dfca; border-radius: 999px; color: #756647; background: #fff7e6; font-size: 10px; font-weight: 650; }
 .topbar-exit { min-height: 48px; display: inline-flex; align-items: center; border: 0; padding: 0; color: #5d6b62; background: transparent; font-size: 11px; text-decoration: none; cursor: pointer; }
@@ -386,6 +387,7 @@ button:disabled { cursor: not-allowed; opacity: .55; }
   .worker-shell { padding: 0 17px; }
   .worker-header { min-height: 68px; gap: 8px; }
   .worker-header-right { gap: 7px; }
+  .pwa-install-button { min-height: 34px; padding: 0 8px; font-size: 9px; }
   .worker-identity { display: none; }
   .worker-header .brand { font-size: 14px; gap: 7px; }
   .worker-header .brand-mark { width: 31px; height: 31px; border-radius: 10px; }
@@ -505,9 +507,53 @@ button:disabled { cursor: not-allowed; opacity: .55; }
 .instruction-record > p { color: var(--muted); font-size: 12px; }
 .instruction-record-content { padding: 14px; border-radius: 10px; background: #f5f7f1; color: var(--ink); font-size: 13px; line-height: 1.7; white-space: pre-wrap; }
 .instruction-record > small { display: block; margin-top: 10px; color: var(--muted); }
+.assessment-outcomes-panel { margin-top: 13px; padding: 20px; }
+.assessment-outcome-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
+.assessment-outcome-strip > span { display: flex; justify-content: space-between; gap: 8px; padding: 12px; border: 1px solid #e6e9e1; border-radius: 10px; color: var(--muted); background: #fffdf8; font-size: 11px; }
+.assessment-outcome-strip strong { color: var(--ink); font-size: 15px; }
+.assessment-outcome-strip [data-outcome="correct"] strong { color: var(--green); }
+.assessment-outcome-strip [data-outcome="incorrect"] strong, .assessment-outcome-strip [data-outcome="assistance"] strong { color: #a35417; }
+.overview-detail-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 13px; margin-top: 13px; }
+.recent-activity-list, .briefing-session-list { display: grid; gap: 8px; }
+.recent-activity-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 12px; border: 1px solid #e8ebe3; border-radius: 10px; color: inherit; background: #fff; text-decoration: none; }
+.recent-activity-link:hover, .recent-activity-link:focus-visible { border-color: #a8c4b2; background: #f5f8f3; outline: none; }
+.recent-activity-link > span { display: grid; min-width: 0; gap: 4px; }
+.recent-activity-link strong { color: var(--ink); font-size: 11px; text-transform: capitalize; }
+.recent-activity-link small { color: var(--muted); font-size: 9px; }
+.recent-activity-link > svg { flex: 0 0 auto; color: var(--green); }
+.briefing-session-detail { padding: 10px 12px; border: 1px solid #e8ebe3; border-radius: 10px; background: #fff; }
+.briefing-session-detail summary { display: flex; align-items: center; justify-content: space-between; gap: 10px; cursor: pointer; list-style-position: inside; }
+.briefing-session-detail summary > span { display: grid; min-width: 0; gap: 4px; }
+.briefing-session-detail summary strong { color: var(--ink); font-size: 11px; }
+.briefing-session-detail summary small { color: var(--muted); font-size: 9px; }
+.briefing-session-detail .supervisor-record-details { margin: 13px 0 3px; padding-top: 12px; border-top: 1px solid #eceee6; }
+.voice-diagnostics-link { width: fit-content; display: inline-flex; align-items: center; gap: 7px; min-height: 42px; margin: 8px 2px 0; color: var(--green); font-size: 11px; font-weight: 750; text-decoration: none; }
+.voice-diagnostics-link:hover { text-decoration: underline; }
+.voice-diagnostics-panel { display: grid; gap: 14px; margin-bottom: 13px; padding: 20px; }
+.voice-diagnostics-panel h2 { margin: 0; color: var(--green-dark); font-size: 16px; }
+.diagnostic-facts, .diagnostic-voice-list { display: grid; gap: 0; margin: 0; }
+.diagnostic-facts > div, .diagnostic-voice-list > div { display: grid; grid-template-columns: minmax(135px, .38fr) minmax(0, 1fr); gap: 12px; padding: 11px 0; border-bottom: 1px solid #eceee6; }
+.diagnostic-facts > div:last-child, .diagnostic-voice-list > div:last-child { border-bottom: 0; }
+.diagnostic-facts dt, .diagnostic-voice-list dt { color: var(--muted); font-size: 11px; font-weight: 700; }
+.diagnostic-facts dd, .diagnostic-voice-list dd { margin: 0; color: var(--ink); font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+.diagnostic-disclosure, .diagnostic-message, .diagnostic-test-phrase { margin: 0; padding: 12px; border: 1px solid #ece3cd; border-radius: 10px; color: #6b604c; background: #fff8e9; font-size: 11px; line-height: 1.6; }
+.diagnostic-voice-controls { display: flex; flex-wrap: wrap; gap: 9px; }
+.diagnostic-transcript { display: grid; gap: 6px; margin: 0; padding: 13px; border: 1px solid #dce6dc; border-radius: 11px; background: #f5f8f3; }
+.diagnostic-transcript strong { color: var(--green); font-size: 11px; }
+.diagnostic-transcript span { color: var(--ink); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
+.diagnostic-test-phrase strong { color: var(--green); }
+
+@media (max-width: 920px) {
+  .overview-detail-grid { grid-template-columns: 1fr; }
+}
 
 @media (max-width: 680px) {
   .supervisor-record-card { padding: 15px; }
   .supervisor-record-details { grid-template-columns: 1fr; gap: 11px; }
   .worker-report-row { padding: 11px; }
+  .assessment-outcomes-panel { padding: 15px; }
+  .assessment-outcome-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .voice-diagnostics-panel { padding: 15px; }
+  .diagnostic-facts > div, .diagnostic-voice-list > div { grid-template-columns: 1fr; gap: 4px; }
+  .diagnostic-voice-controls .button { width: 100%; }
 }

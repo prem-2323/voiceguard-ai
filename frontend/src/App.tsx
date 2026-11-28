@@ -2,6 +2,7 @@ import { Navigate, Outlet, Route, Routes } from 'react-router-dom'
 import { SupervisorLayout, WorkerLayout } from './components/layouts'
 import { useWorkflow } from './contexts/WorkflowContext'
 import WelcomePage from './pages/WelcomePage'
+import VoiceDiagnosticsPage from './pages/VoiceDiagnosticsPage'
 import {
   AssessmentPage,
   BriefingPage,
@@ -45,6 +46,7 @@ export default function App() {
       <Route path="/" element={<WelcomePage />} />
 
       <Route element={<WorkerLayout />}>
+        <Route path="worker/voice-diagnostics" element={<VoiceDiagnosticsPage />} />
         <Route path="worker/login" element={<WorkerLoginPage />} />
         <Route path="worker/sos" element={<WorkerSosPage />} />
         <Route element={<RequireWorker />}>

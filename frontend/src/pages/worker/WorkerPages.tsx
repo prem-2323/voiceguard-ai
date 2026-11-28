@@ -703,6 +703,7 @@ export function HazardConfirmationPage() {
         description: hazardDraft.description,
         location: hazardDraft.location,
         transcript: hazardDraft.transcript || null,
+        confirmed: true,
       }, workerAccessToken, idempotencyKey)
       if (!response.success || !response.data) throw new Error('The server did not confirm that the report was saved.')
       setSubmittedHazard(response.data)

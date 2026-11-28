@@ -5,7 +5,6 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
-from sqlalchemy.pool import StaticPool
 
 from app.core.database import Base, get_db
 from app.core.security import create_access_token, hash_password
@@ -16,11 +15,11 @@ from app.models.enums import PermitStatus, UserRole
 
 
 @pytest.fixture
-def system(monkeypatch) -> Iterator[dict[str, object]]:
+def system(monkeypatch, tmp_path) -> Iterator[dict[str, object]]:
+    test_database = tmp_path / "voiceguard-test.sqlite3"
     engine = create_engine(
-        "sqlite://",
+        f"sqlite:///{test_database.as_posix()}",
         connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
     )
 
     @event.listens_for(engine, "connect")

@@ -11,6 +11,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useWorkflow } from '../contexts/WorkflowContext'
+import { PwaInstallButton } from './PwaInstallButton'
 
 const workerLinks = [
   { to: '/worker/home', label: 'Home', icon: LayoutDashboard },
@@ -23,6 +24,7 @@ const supervisorLinks = [
   { to: '/supervisor/workers', label: 'Workers', icon: Users },
   { to: '/supervisor/permits', label: 'Permits', icon: ClipboardList },
   { to: '/supervisor/hazards', label: 'Hazard reports', icon: FileWarning },
+  { to: '/supervisor/briefings', label: 'Briefing sessions', icon: BookOpenCheck },
   { to: '/supervisor/assessments', label: 'Assessments', icon: BookOpenCheck },
   { to: '/supervisor/sos', label: 'SOS monitoring', icon: ShieldAlert },
   { to: '/supervisor/instructions', label: 'Safety instructions', icon: ScrollText },
@@ -47,6 +49,7 @@ export function WorkerLayout() {
       <header className="worker-header">
         <Brand />
         <div className="worker-header-right">
+          <PwaInstallButton />
           {workerId && <span className="worker-identity"><span className="online-dot" />{workerName || workerId}</span>}
           {workerId && <Link className="language-chip" to="/worker/language">{languageLabel}<span aria-hidden="true">⌄</span></Link>}
           <Link to="/worker/sos" className="sos-button"><LifeBuoy size={18} /> SOS <span className="sos-button-caption">Help</span></Link>
@@ -88,6 +91,7 @@ export function SupervisorLayout() {
       <div className="supervisor-main">
         <header className="supervisor-topbar">
           <div className="mobile-brand"><Brand /></div>
+          <PwaInstallButton />
           <span className="demo-banner"><span className="environment-dot" /> Preview data · not live</span>
           <button className="topbar-exit" type="button" onClick={() => setSupervisorAuthenticated(false)}>Sign out</button>
         </header>

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" role="img" aria-label="VoiceGuard AI">
+  <rect width="512" height="512" rx="112" fill="#0B4F3E"/>
+  <path d="M134 132 248 380 378 132" fill="none" stroke="#F6EBD3" stroke-linecap="round" stroke-linejoin="round" stroke-width="58"/>
+  <circle cx="382" cy="382" r="30" fill="#F57C00"/>
+</svg>

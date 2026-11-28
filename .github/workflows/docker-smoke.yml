@@ -1,0 +1,149 @@
+name: Docker Compose smoke
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  compose-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      VOICEGUARD_PORT: "18080"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Check Docker Compose
+        run: docker compose version
+
+      - name: Build all services
+        run: docker compose build
+
+      - name: Start services and wait for health checks
+        run: docker compose up --detach --wait --wait-timeout 180
+
+      - name: Verify frontend, API proxy, persistence, and acknowledgement
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +x
+          base_url="http://127.0.0.1:${VOICEGUARD_PORT}"
+          temp_dir="${RUNNER_TEMP}/voiceguard-smoke"
+          mkdir -p "$temp_dir"
+
+          curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-connrefused \
+            "$base_url/api/health" --output "$temp_dir/health.json"
+          jq -e '.success == true and .data.status == "healthy"' "$temp_dir/health.json" >/dev/null
+          curl --fail --silent --show-error "$base_url/" --output "$temp_dir/index.html"
+          grep -q 'VoiceGuard AI' "$temp_dir/index.html"
+
+          worker_login="$(curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data '{"worker_id":"WRK-1001","password":"demo123"}' \
+            "$base_url/api/auth/demo-login")"
+          worker_token="$(printf '%s' "$worker_login" | jq -er '.data.access_token')"
+          echo "::add-mask::${worker_token}"
+          worker_user_id="$(printf '%s' "$worker_login" | jq -er '.data.user.id')"
+          unset worker_login
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${worker_token}" \
+            "$base_url/api/permits" --output "$temp_dir/permits.json"
+          permit_id="$(jq -er '[.data[] | select(.permit_number == "PTW-1001" and .status == "active")][0].id' "$temp_dir/permits.json")"
+
+          idempotency_key="ci-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          hazard_payload="$(jq -nc --argjson permit_id "$permit_id" --arg description "Automated Docker smoke test ${GITHUB_RUN_ID}" \
+            '{permit_id:$permit_id,category:"other",description:$description,location:"CI test fixture",transcript:null,confirmed:true}')"
+          created_hazard="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${worker_token}" \
+            --header "Idempotency-Key: ${idempotency_key}" \
+            --header 'Content-Type: application/json' \
+            --data "$hazard_payload" "$base_url/api/hazards")"
+          hazard_id="$(printf '%s' "$created_hazard" | jq -er '.data.id')"
+          unset created_hazard
+
+          retried_hazard="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${worker_token}" \
+            --header "Idempotency-Key: ${idempotency_key}" \
+            --header 'Content-Type: application/json' \
+            --data "$hazard_payload" "$base_url/api/hazards")"
+          test "$(printf '%s' "$retried_hazard" | jq -er '.data.id')" = "$hazard_id"
+          unset retried_hazard hazard_payload
+
+          docker compose restart api
+          curl --fail --silent --show-error --retry 30 --retry-delay 2 --retry-connrefused \
+            "$base_url/api/health" --output "$temp_dir/health-after-restart.json"
+          jq -e '.success == true and .data.status == "healthy"' "$temp_dir/health-after-restart.json" >/dev/null
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${worker_token}" \
+            "$base_url/api/hazards/${hazard_id}" --output "$temp_dir/persisted-hazard.json"
+          jq -e --argjson id "$hazard_id" '.data.id == $id and .data.status == "submitted"' "$temp_dir/persisted-hazard.json" >/dev/null
+
+          supervisor_login="$(curl --fail --silent --show-error \
+            --header 'Content-Type: application/json' \
+            --data '{"worker_id":"SUP-1001","password":"demo123"}' \
+            "$base_url/api/auth/demo-login")"
+          supervisor_token="$(printf '%s' "$supervisor_login" | jq -er '.data.access_token')"
+          echo "::add-mask::${supervisor_token}"
+          supervisor_user_id="$(printf '%s' "$supervisor_login" | jq -er '.data.user.id')"
+          unset supervisor_login
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${supervisor_token}" \
+            "$base_url/api/hazards" --output "$temp_dir/supervisor-hazards.json"
+          jq -e --argjson id "$hazard_id" 'any(.data[]; .id == $id)' "$temp_dir/supervisor-hazards.json" >/dev/null
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${supervisor_token}" \
+            "$base_url/api/hazards/${hazard_id}" --output "$temp_dir/supervisor-detail.json"
+          jq -e --argjson id "$hazard_id" '.data.id == $id and (.data.description | contains("Automated Docker smoke test"))' \
+            "$temp_dir/supervisor-detail.json" >/dev/null
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${supervisor_token}" \
+            --header 'Content-Type: application/json' \
+            --data '{"note":"Automated Compose smoke acknowledgement"}' \
+            "$base_url/api/hazards/${hazard_id}/acknowledge" --output "$temp_dir/acknowledged.json"
+          jq -e --argjson id "$hazard_id" --argjson supervisor_id "$supervisor_user_id" \
+            '.data.id == $id and .data.status == "acknowledged" and .data.acknowledged_by == $supervisor_id and .data.acknowledged_at != null' \
+            "$temp_dir/acknowledged.json" >/dev/null
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${worker_token}" \
+            "$base_url/api/hazards/${hazard_id}" --output "$temp_dir/worker-status.json"
+          jq -e --argjson id "$hazard_id" --argjson supervisor_id "$supervisor_user_id" \
+            '.data.id == $id and .data.status == "acknowledged" and .data.acknowledged_by == $supervisor_id' \
+            "$temp_dir/worker-status.json" >/dev/null
+
+          curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${supervisor_token}" \
+            "$base_url/api/audit" --output "$temp_dir/audit.json"
+          jq -e --argjson id "$hazard_id" --argjson worker_id "$worker_user_id" --argjson supervisor_id "$supervisor_user_id" \
+            '([.data[] | select(.entity_type == "hazard" and .entity_id == $id and .action == "hazard_submitted" and .user_id == $worker_id)] | length) == 1 and ([.data[] | select(.entity_type == "hazard" and .entity_id == $id and .action == "hazard_acknowledged" and .user_id == $supervisor_id)] | length) == 1' \
+            "$temp_dir/audit.json" >/dev/null
+
+          unset worker_token supervisor_token
+          echo "Docker smoke passed: frontend/API proxy, assigned permit, confirmed hazard, idempotent retry, SQLite persistence after API restart, supervisor acknowledgement, worker status, and audit attribution."
+
+      - name: Collect redacted service logs on failure
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          docker compose ps --all || true
+          docker compose logs --no-color > "${RUNNER_TEMP}/voiceguard-compose.log" 2>&1 || true
+          sed -E \
+            -e 's/(Authorization: Bearer )[[:alnum:]_.-]+/\1[REDACTED]/Ig' \
+            -e 's/("?(access_token|refresh_token|jwt_secret|api_key|password)"?[[:space:]]*:[[:space:]]*")[^"]*/\1[REDACTED]/Ig' \
+            -e 's/(JWT_SECRET=)[^[:space:]]+/\1[REDACTED]/Ig' \
+            "${RUNNER_TEMP}/voiceguard-compose.log"
+
+      - name: Shut down Compose services and remove CI data
+        if: always()
+        run: docker compose down --volumes --remove-orphans

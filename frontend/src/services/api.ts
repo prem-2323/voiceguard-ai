@@ -25,6 +25,29 @@ export interface SupervisorOverview {
   open_hazards: number
   pending_assessments: number
   open_simulated_sos: number
+  completed_briefings: number
+  average_completion_seconds: number | null
+  correct_assessments: number
+  incorrect_assessments: number
+  unclear_assessments: number
+  assistance_required: number
+}
+
+export interface SupervisorBriefing {
+  id: number
+  worker_id: number
+  worker_name: string
+  permit_id: number
+  permit_number: string
+  instruction_id: number
+  instruction_title: string
+  instruction_version: number
+  language: 'en' | 'ta' | 'hi'
+  status: 'started' | 'in_progress' | 'completed' | 'supervisor_review'
+  current_step: number
+  started_at: string
+  completed_at: string | null
+  duration_seconds: number | null
 }
 
 export interface SupervisorWorker extends DemoUser {
@@ -375,6 +398,7 @@ export async function createHazardReport(
     description: string
     location: string
     transcript: string | null
+    confirmed: true
   },
   accessToken: string,
   idempotencyKey: string,
@@ -391,6 +415,14 @@ export async function createHazardReport(
 export async function fetchSupervisorOverview(accessToken: string): Promise<ApiEnvelope<SupervisorOverview>> {
   const response = await api.get<ApiEnvelope<SupervisorOverview>>('/supervisor/overview', {
     headers: { Authorization: `Bearer ${accessToken}` },
+  })
+  return response.data
+}
+
+export async function fetchSupervisorBriefings(accessToken: string, limit = 10): Promise<ApiEnvelope<SupervisorBriefing[]>> {
+  const response = await api.get<ApiEnvelope<SupervisorBriefing[]>>('/supervisor/briefings', {
+    headers: { Authorization: `Bearer ${accessToken}` },
+    params: { limit },
   })
   return response.data
 }

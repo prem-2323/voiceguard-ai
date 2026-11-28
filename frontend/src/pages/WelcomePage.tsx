@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, HardHat, ShieldCheck, Wifi, WifiOff } from 'lucide-react'
+import { ArrowRight, HardHat, Mic, ShieldCheck, Wifi, WifiOff } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { fetchHealth } from '../services/api'
 import { Brand } from '../components/layouts'
+import { PwaInstallButton } from '../components/PwaInstallButton'
 
 export default function WelcomePage() {
   const [apiReady, setApiReady] = useState<boolean | null>(null)
@@ -19,6 +20,7 @@ export default function WelcomePage() {
     <div className="welcome-shell">
       <header className="welcome-header">
         <Brand />
+        <PwaInstallButton />
         <span className="welcome-status">
           {apiReady ? <Wifi size={15} /> : apiReady === false ? <WifiOff size={15} /> : <span className="status-spinner" />}
           {apiReady === null ? 'Checking services' : apiReady ? 'Services connected' : 'Offline preview'}
@@ -50,6 +52,7 @@ export default function WelcomePage() {
             <ArrowRight size={19} className="role-arrow" />
           </Link>
           <p className="demo-note"><span className="environment-dot" /> DEMO ENVIRONMENT · SYNTHETIC DATA ONLY</p>
+          <Link className="voice-diagnostics-link" to="/worker/voice-diagnostics"><Mic size={14} /> Check browser voice support</Link>
         </section>
       </main>
 

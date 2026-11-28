@@ -27,7 +27,7 @@ from app.schemas import (
     HazardNoteCreate, HazardNoteRead, HazardRead, InstructionCreate,
     InstructionRead, LoginRequest, PermitCreate, PermitRead, PermitStatusUpdate,
     QuestionRead, ReviewRequest, SupervisorOverview, UserRead, WorkerCreate,
-    WorkerInstructionRead, WorkerQuestionRead, success,
+    SupervisorBriefingRead, WorkerInstructionRead, WorkerQuestionRead, success,
 )
 from app.services.audit import record_audit
 from app.services.authorization import get_scoped_permit, require_worker_access
@@ -506,13 +506,14 @@ def create_hazard(payload: HazardCreate, idempotency_key: str = Header(alias="Id
         if existing.worker_id != user.id:
             raise HTTPException(status_code=409, detail="Idempotency key is already associated with another account")
         return success(HazardRead.model_validate(existing), "Existing hazard report returned for safe retry")
-    permit = get_scoped_permit(db, user, payload.permit_id, active=True) if payload.permit_id is not None else None
-    hazard = HazardReport(worker_id=user.id, permit_id=permit.id if permit else None, category=payload.category,
+    permit = get_scoped_permit(db, user, payload.permit_id, active=True)
+    hazard = HazardReport(worker_id=user.id, permit_id=permit.id, category=payload.category,
                           description=payload.description, location=payload.location, transcript=payload.transcript,
                           idempotency_key=idempotency_key, status=HazardStatus.SUBMITTED)
     db.add(hazard)
     _flush(db)
-    record_audit(db, actor=user, action="hazard_submitted", entity_type="hazard", entity_id=hazard.id)
+    record_audit(db, actor=user, action="hazard_submitted", entity_type="hazard", entity_id=hazard.id,
+                 details={"worker_confirmed": payload.confirmed})
     _commit(db)
     notify_worker_and_supervisors(db, user.id, "hazards.changed")
     return success(HazardRead.model_validate(hazard), "Hazard report persisted")
@@ -665,8 +666,71 @@ def supervisor_overview(db: Session = Depends(get_db), user: User = Depends(requ
         BriefingSession.worker_id.in_(worker_ids), BriefingSession.status == BriefingStatus.SUPERVISOR_REVIEW)) or 0
     open_sos = db.scalar(select(func.count()).select_from(EmergencyRecord).where(
         EmergencyRecord.worker_id.in_(worker_ids), EmergencyRecord.status == EmergencyStatus.SUBMITTED)) or 0
+    completed_rows = db.execute(select(BriefingSession.started_at, BriefingSession.completed_at).where(
+        BriefingSession.worker_id.in_(worker_ids), BriefingSession.status == BriefingStatus.COMPLETED,
+        BriefingSession.completed_at.is_not(None))).all()
+    durations = [(_as_utc(completed) - _as_utc(started)).total_seconds()
+                 for started, completed in completed_rows if completed is not None]
+    durations = [duration for duration in durations if duration >= 0]
+    assessment_rows = db.scalars(select(AssessmentResult).where(
+        AssessmentResult.worker_id.in_(worker_ids)).order_by(AssessmentResult.created_at.desc())).all()
+    latest_assessments: dict[tuple[int, int], AssessmentResult] = {}
+    for row in assessment_rows:
+        key = (row.session_id, row.question_id)
+        if key not in latest_assessments or row.attempt_count > latest_assessments[key].attempt_count:
+            latest_assessments[key] = row
+    outcomes = [row.result for row in latest_assessments.values()]
     return success(SupervisorOverview(assigned_workers=assigned_count, open_hazards=open_hazards,
-                                      pending_assessments=pending, open_simulated_sos=open_sos))
+                                      pending_assessments=pending, open_simulated_sos=open_sos,
+                                      completed_briefings=len(durations),
+                                      average_completion_seconds=round(sum(durations) / len(durations), 1) if durations else None,
+                                      correct_assessments=outcomes.count(AssessmentResultStatus.CORRECT),
+                                      incorrect_assessments=outcomes.count(AssessmentResultStatus.INCORRECT),
+                                      unclear_assessments=outcomes.count(AssessmentResultStatus.UNCLEAR),
+                                      assistance_required=pending))
+
+
+@router.get("/supervisor/briefings", tags=["supervisor"])
+def list_supervisor_briefings(
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: User = Depends(require_roles(UserRole.SUPERVISOR)),
+):
+    rows = db.scalars(
+        select(BriefingSession)
+        .join(SupervisorAssignment, SupervisorAssignment.worker_id == BriefingSession.worker_id)
+        .options(
+            selectinload(BriefingSession.worker),
+            selectinload(BriefingSession.permit),
+            selectinload(BriefingSession.instruction),
+        )
+        .where(SupervisorAssignment.supervisor_id == user.id)
+        .order_by(BriefingSession.started_at.desc())
+        .limit(limit)
+    ).all()
+    records = []
+    for row in rows:
+        duration = None
+        if row.completed_at is not None:
+            elapsed = (_as_utc(row.completed_at) - _as_utc(row.started_at)).total_seconds()
+            duration = int(elapsed) if elapsed >= 0 else None
+        records.append(SupervisorBriefingRead(
+            id=row.id,
+            worker_id=row.worker_id,
+            worker_name=row.worker.name,
+            permit_id=row.permit_id,
+            permit_number=row.permit.permit_number,
+            instruction_id=row.instruction_id,
+            instruction_title=row.instruction.title,
+            instruction_version=row.instruction_version,
+            language=row.instruction.language,
+            status=row.status,
+            current_step=row.current_step,
+            started_at=row.started_at,
+            completed_at=row.completed_at,
+            duration_seconds=duration,
+        ))
+    return success(records)
 
 
 @router.get("/audit", tags=["audit"])
