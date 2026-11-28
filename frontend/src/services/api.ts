@@ -12,7 +12,7 @@ export interface HealthData {
   database: string
 }
 
-export interface DemoUser {
+export interface UserAccount {
   id: number
   name: string
   worker_id: string
@@ -50,7 +50,7 @@ export interface SupervisorBriefing {
   duration_seconds: number | null
 }
 
-export interface SupervisorWorker extends DemoUser {
+export interface SupervisorWorker extends UserAccount {
   email: string | null
   is_active: boolean
   created_at: string
@@ -60,11 +60,11 @@ export interface SupervisorPermit extends WorkerPermit {
   worker_id: number
 }
 
-export interface DemoAuthData {
+export interface AuthData {
   access_token: string
   token_type: 'bearer'
   expires_in: number
-  user: DemoUser
+  user: UserAccount
 }
 
 export interface VoiceCapabilities {
@@ -244,8 +244,8 @@ export async function fetchHealth(): Promise<ApiEnvelope<HealthData>> {
   return response.data
 }
 
-export async function loginDemo(workerId: string, password: string, role: 'worker' | 'supervisor' = 'worker'): Promise<ApiEnvelope<DemoAuthData>> {
-  const response = await api.post<ApiEnvelope<DemoAuthData>>('/auth/demo-login', {
+export async function login(workerId: string, password: string, role: 'worker' | 'supervisor' = 'worker'): Promise<ApiEnvelope<AuthData>> {
+  const response = await api.post<ApiEnvelope<AuthData>>('/auth/login', {
     worker_id: workerId,
     password,
     role,

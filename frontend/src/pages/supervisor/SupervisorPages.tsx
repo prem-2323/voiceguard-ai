@@ -27,7 +27,7 @@ import {
   fetchSupervisorOverview,
   fetchSupervisorPermits,
   fetchSupervisorWorkers,
-  loginDemo,
+  login,
   reviewAssessment,
   type AssessmentReviewRecord,
   type AuditEntry,
@@ -43,8 +43,8 @@ import {
 export function SupervisorLoginPage() {
   const navigate = useNavigate()
   const { setSupervisorSession } = useWorkflow()
-  const [supervisorId, setSupervisorId] = useState('SUP-1001')
-  const [password, setPassword] = useState('demo123')
+  const [supervisorId, setSupervisorId] = useState('')
+  const [password, setPassword] = useState('')
   const [signingIn, setSigningIn] = useState(false)
   const [formError, setFormError] = useState('')
 
@@ -53,13 +53,13 @@ export function SupervisorLoginPage() {
     setSigningIn(true)
     setFormError('')
     try {
-      const response = await loginDemo(supervisorId.trim(), password, 'supervisor')
-      if (!response.success || !response.data || response.data.user.role !== 'supervisor') throw new Error('The supervisor account was not returned.')
+      const response = await login(supervisorId.trim(), password, 'supervisor')
+      if (!response.success || !response.data || response.data.user.role !== 'supervisor') throw new Error('A supervisor account was not returned.')
       setSupervisorSession(response.data.user.id, response.data.user.worker_id, response.data.user.name, response.data.access_token)
       navigate('/supervisor')
     } catch (error) {
       setFormError(error instanceof ApiError && error.status === 401
-        ? 'Check the demo supervisor ID and password, then try again.'
+        ? 'Supervisor ID or password is incorrect.'
         : error instanceof ApiError ? error.message : 'The supervisor backend could not be reached. Try again when it is available.')
     } finally {
       setSigningIn(false)
@@ -68,19 +68,19 @@ export function SupervisorLoginPage() {
 
   return (
     <div className="supervisor-login-shell">
-      <header className="welcome-header"><Link to="/" className="brand"><span className="brand-mark">V</span><span>VoiceGuard <span className="brand-light">AI</span></span></Link><Badge tone="info">Supervisor demo</Badge></header>
+      <header className="welcome-header"><Link to="/" className="brand"><span className="brand-mark">V</span><span>VoiceGuard <span className="brand-light">AI</span></span></Link><Badge tone="info">Supervisor sign in</Badge></header>
       <main className="supervisor-login-main">
         <div className="supervisor-login-art"><div className="login-orbit orbit-one" /><div className="login-orbit orbit-two" /><div className="login-art-mark"><ShieldAlert size={42} /></div><p>Human review<br />at every critical step.</p></div>
         <section className="supervisor-login-form">
           <p className="eyebrow">SUPERVISOR ACCESS</p>
           <h1>Welcome to<br />your console.</h1>
-          <p className="page-description">Sign in with the fictional supervisor account to preview the monitoring screens.</p>
+          <p className="page-description">Sign in with an account provisioned for your site.</p>
           <form className="stack-form" onSubmit={handleSubmit}>
             <label className="field-label" htmlFor="supervisor-id">Supervisor ID</label>
             <input id="supervisor-id" className="text-field" value={supervisorId} onChange={(event) => setSupervisorId(event.target.value)} required autoComplete="username" />
-            <label className="field-label" htmlFor="supervisor-password">Demo password</label>
+            <label className="field-label" htmlFor="supervisor-password">Password</label>
             <input id="supervisor-password" className="text-field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" />
-          <p className="field-hint">Use the fictional supervisor account. Access is limited to assigned demo workers.</p>
+          <p className="field-hint">Access is limited to workers assigned to your account.</p>
           {formError && <p className="form-error" role="alert">{formError}</p>}
           <button className="button button-primary button-full" type="submit" disabled={signingIn}>{signingIn ? 'Signing in…' : 'Open supervisor console'} <ArrowRight size={17} /></button>
           </form>
@@ -98,12 +98,12 @@ const sectionData: Record<string, {
 }> = {
   workers: {
     title: 'Worker management',
-    description: 'View fictional workers in the current demonstration dataset.',
+    description: 'View worker accounts assigned to your supervisor profile.',
     icon: Users,
   },
   permits: {
     title: 'Permit monitoring',
-    description: 'Review the fictional permits associated with demo workers.',
+    description: 'Review permits assigned to workers in your scope.',
     icon: ClipboardList,
   },
   hazards: {
@@ -118,12 +118,12 @@ const sectionData: Record<string, {
   },
   sos: {
     title: 'SOS monitoring',
-    description: 'Monitor simulated SOS events from the demonstration workflow.',
+    description: 'Review simulated SOS events submitted by assigned workers.',
     icon: ShieldAlert,
   },
   instructions: {
     title: 'Safety instructions',
-    description: 'Review draft and published content versions for the demonstration.',
+    description: 'Review draft and published safety instruction versions.',
     icon: ScrollText,
   },
   briefings: {
@@ -237,7 +237,7 @@ export function SupervisorOverviewPage() {
   useEffect(() => { void refresh() }, [refresh])
 
   const metrics = [
-    { label: 'Assigned workers', value: overview ? String(overview.assigned_workers).padStart(2, '0') : '—', hint: 'Fictional accounts', icon: Users },
+    { label: 'Assigned workers', value: overview ? String(overview.assigned_workers).padStart(2, '0') : '—', hint: 'Accounts assigned to you', icon: Users },
     { label: 'Active permits', value: overview ? String(activePermits).padStart(2, '0') : '—', hint: 'Currently in validity window', icon: ClipboardList },
     { label: 'Open hazard reports', value: overview ? String(overview.open_hazards).padStart(2, '0') : '—', hint: 'Awaiting acknowledgement', icon: FileWarning },
     { label: 'Reviews / SOS', value: overview ? `${overview.pending_assessments} / ${overview.open_simulated_sos}` : '—', hint: 'Supervisor attention', icon: BookOpenCheck },
@@ -247,13 +247,13 @@ export function SupervisorOverviewPage() {
 
   return (
     <div>
-      <PageHeading eyebrow="SUPERVISOR CONSOLE" title="Overview" description="Current activity for workers assigned to this demo supervisor." action={<LiveBadge state={connectionState} />} />
+      <PageHeading eyebrow="SUPERVISOR CONSOLE" title="Overview" description="Current activity for workers assigned to you." action={<LiveBadge state={connectionState} />} />
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="metric-grid">
         {metrics.map(({ label, value, hint, icon: Icon }) => <Panel className="metric-card" key={label}><span className="metric-icon"><Icon size={19} /></span><span className="metric-label">{label}</span><strong>{value}</strong><small>{hint}</small></Panel>)}
       </div>
       <Panel className="assessment-outcomes-panel">
-        <div className="panel-heading"><div><p className="eyebrow">LATEST SAVED ANSWER PER QUESTION</p><h2>Assessment outcomes</h2></div><Badge tone="info">Assigned demo workers</Badge></div>
+        <div className="panel-heading"><div><p className="eyebrow">LATEST SAVED ANSWER PER QUESTION</p><h2>Assessment outcomes</h2></div><Badge tone="info">Assigned workers</Badge></div>
         <div className="assessment-outcome-strip">
           <span data-outcome="correct">Correct <strong>{overview?.correct_assessments ?? '—'}</strong></span>
           <span data-outcome="incorrect">Incorrect <strong>{overview?.incorrect_assessments ?? '—'}</strong></span>
@@ -262,21 +262,21 @@ export function SupervisorOverviewPage() {
         </div>
       </Panel>
       <div className="overview-grid">
-        <Panel className="overview-panel"><div className="panel-heading"><div><p className="eyebrow">WORKER FLOW</p><h2>Review queues</h2></div><Badge tone={overview ? 'success' : 'neutral'}>{overview ? 'Connected' : 'Loading'}</Badge></div><div className="overview-empty"><span className="overview-empty-icon"><Activity size={20} /></span><div><strong>Supervisor actions are recorded.</strong><p>Hazard reports, unresolved assessments, simulated SOS events, acknowledgements, and audit history are stored in the demo database.</p></div></div></Panel>
+        <Panel className="overview-panel"><div className="panel-heading"><div><p className="eyebrow">WORKER FLOW</p><h2>Review queues</h2></div><Badge tone={overview ? 'success' : 'neutral'}>{overview ? 'Connected' : 'Loading'}</Badge></div><div className="overview-empty"><span className="overview-empty-icon"><Activity size={20} /></span><div><strong>Supervisor actions are recorded.</strong><p>Hazard reports, unresolved assessments, simulated SOS events, acknowledgements, and audit history are stored by the configured backend.</p></div></div></Panel>
         <Panel className="overview-panel quick-links"><div className="panel-heading"><div><p className="eyebrow">QUICK ACCESS</p><h2>Review workspace</h2></div></div><Link to="/supervisor/hazards" className="quick-link"><span className="quick-link-icon"><FileWarning size={17} /></span><span><strong>Hazard reports</strong><small>Review and acknowledge</small></span><ArrowRight size={16} /></Link><Link to="/supervisor/assessments" className="quick-link"><span className="quick-link-icon"><BookOpenCheck size={17} /></span><span><strong>Assessment review</strong><small>Follow up unresolved attempts</small></span><ArrowRight size={16} /></Link><Link to="/supervisor/sos" className="quick-link"><span className="quick-link-icon warm"><LifeBuoy size={17} /></span><span><strong>SOS monitoring</strong><small>Simulated events only</small></span><ArrowRight size={16} /></Link></Panel>
       </div>
       <div className="overview-detail-grid">
         <Panel className="overview-panel recent-activity-panel">
           <div className="panel-heading"><div><p className="eyebrow">RECENT ACTIVITY</p><h2>{recentActivity.length} saved event{recentActivity.length === 1 ? '' : 's'}</h2></div><Link to="/supervisor/audit" className="inline-action-link">Open audit history <ArrowRight size={14} /></Link></div>
           {recentActivity.length ? <div className="recent-activity-list">{recentActivity.map((entry) => <Link className="recent-activity-link" to={activityPath(entry)} key={entry.id}><span><strong>{entry.action.replaceAll('_', ' ')}</strong><small>{entry.entity_type}{entry.entity_id ? ` #${entry.entity_id}` : ''} · {formatTime(entry.created_at)}</small></span><ArrowRight size={16} /></Link>)}</div> : <p className="field-hint">No saved activity is available yet.</p>}
-          <p className="field-hint">Activity links open the matching saved record queue. All records shown are fictional demo data.</p>
+          <p className="field-hint">Activity links open the matching saved record queue for your assigned workers.</p>
         </Panel>
         <Panel className="overview-panel recent-briefings-panel">
           <div className="panel-heading"><div><p className="eyebrow">SESSION HISTORY</p><h2>Recent briefing sessions</h2></div><Link to="/supervisor/briefings" className="inline-action-link">View all <ArrowRight size={14} /></Link></div>
           <BriefingSessionList sessions={recentBriefings} />
         </Panel>
       </div>
-      <div className="supervisor-safety-note"><ShieldAlert size={17} /><span>All records in this screen are synthetic. This console does not contact emergency services or authorize work.</span></div>
+      <div className="supervisor-safety-note"><ShieldAlert size={17} /><span>SOS events are simulations. This console does not contact emergency services, clear permits, or authorize work.</span></div>
     </div>
   )
 }
@@ -375,24 +375,24 @@ export function SupervisorSectionPage() {
       {actionError && <p className="form-error" role="alert">{actionError}</p>}
       {loading ? <Panel><p className="field-hint">Loading assigned records…</p></Panel> : (
         <>
-          {section === 'workers' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">ASSIGNED ACCOUNTS</p><h2>{workers.length} worker{workers.length === 1 ? '' : 's'}</h2></div><Badge tone="info">Fictional demo data</Badge></div>{workers.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Worker</th><th>Worker ID</th><th>Language</th><th>Account</th><th>Added</th></tr></thead><tbody>{workers.map((worker) => <tr key={worker.id}><td data-label="Worker">{worker.name}</td><td data-label="Worker ID">{worker.worker_id}</td><td data-label="Language">{worker.preferred_language}</td><td data-label="Account"><Badge tone={worker.is_active ? 'success' : 'warning'}>{worker.is_active ? 'Active' : 'Inactive'}</Badge></td><td data-label="Added">{formatTime(worker.created_at)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<Users size={22} />} title="No assigned workers" detail="Workers assigned to this supervisor will appear here." />}</Panel>}
+          {section === 'workers' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">ASSIGNED ACCOUNTS</p><h2>{workers.length} worker{workers.length === 1 ? '' : 's'}</h2></div><Badge tone="info">Saved records</Badge></div>{workers.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Worker</th><th>Worker ID</th><th>Language</th><th>Account</th><th>Added</th></tr></thead><tbody>{workers.map((worker) => <tr key={worker.id}><td data-label="Worker">{worker.name}</td><td data-label="Worker ID">{worker.worker_id}</td><td data-label="Language">{worker.preferred_language}</td><td data-label="Account"><Badge tone={worker.is_active ? 'success' : 'warning'}>{worker.is_active ? 'Active' : 'Inactive'}</Badge></td><td data-label="Added">{formatTime(worker.created_at)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<Users size={22} />} title="No assigned workers" detail="Workers assigned to this supervisor will appear here." />}</Panel>}
 
-          {section === 'permits' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">ASSIGNED PERMITS</p><h2>{permits.length} permit{permits.length === 1 ? '' : 's'}</h2></div><Badge tone="info">Read only</Badge></div>{permits.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Permit</th><th>Task</th><th>Location</th><th>Worker</th><th>Status</th><th>Valid until</th></tr></thead><tbody>{permits.map((permit) => <tr key={permit.id}><td data-label="Permit">{permit.permit_number}</td><td data-label="Task">{permit.task_type}</td><td data-label="Location">{permit.work_location}</td><td data-label="Worker">{workerName(permit.worker_id)}</td><td data-label="Status"><Badge tone={statusTone(permit.status)}>{permit.status}</Badge></td><td data-label="Valid until">{formatTime(permit.valid_until)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<ClipboardList size={22} />} title="No permits found" detail="Permits assigned to this supervisor's demo workers will appear here." />}</Panel>}
+          {section === 'permits' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">ASSIGNED PERMITS</p><h2>{permits.length} permit{permits.length === 1 ? '' : 's'}</h2></div><Badge tone="info">Read only</Badge></div>{permits.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Permit</th><th>Task</th><th>Location</th><th>Worker</th><th>Status</th><th>Valid until</th></tr></thead><tbody>{permits.map((permit) => <tr key={permit.id}><td data-label="Permit">{permit.permit_number}</td><td data-label="Task">{permit.task_type}</td><td data-label="Location">{permit.work_location}</td><td data-label="Worker">{workerName(permit.worker_id)}</td><td data-label="Status"><Badge tone={statusTone(permit.status)}>{permit.status}</Badge></td><td data-label="Valid until">{formatTime(permit.valid_until)}</td></tr>)}</tbody></table></div> : <EmptyState icon={<ClipboardList size={22} />} title="No permits found" detail="Permits assigned to your workers will appear here." />}</Panel>}
 
           {section === 'hazards' && <div className="supervisor-record-list">{hazards.length ? hazards.map((hazard) => <Panel className="supervisor-record-card" key={hazard.id}><div className="supervisor-record-header"><div><p className="eyebrow">REPORT #{hazard.id} · {workerName(hazard.worker_id)}</p><h2>{hazard.category.replaceAll('_', ' ')}</h2></div><Badge tone={statusTone(hazard.status)}>{hazard.status}</Badge></div><dl className="supervisor-record-details"><div><dt>Permit</dt><dd>{permitNumber(hazard.permit_id)}</dd></div><div><dt>Location</dt><dd>{hazard.location}</dd></div><div><dt>Description</dt><dd>{hazard.description}</dd></div><div><dt>Voice transcript</dt><dd>{hazard.transcript || 'Text report'}</dd></div><div><dt>Received</dt><dd>{formatTime(hazard.created_at)}</dd></div>{hazard.acknowledged_at && <div><dt>Acknowledged</dt><dd>{formatTime(hazard.acknowledged_at)}</dd></div>}</dl>{hazard.status === 'submitted' && <div className="supervisor-action-form"><label className="field-label" htmlFor={`hazard-note-${hazard.id}`}>Optional acknowledgement note</label><textarea id={`hazard-note-${hazard.id}`} className="text-field text-area" value={notes[`hazard-${hazard.id}`] ?? ''} onChange={(event) => setNotes((current) => ({ ...current, [`hazard-${hazard.id}`]: event.target.value }))} maxLength={2000} placeholder="Add a note for the audit trail" /><button className="button button-primary" type="button" disabled={busyKey === `hazard-${hazard.id}`} onClick={() => void runAction(`hazard-${hazard.id}`, async () => { const response = await acknowledgeHazard(hazard.id, supervisorAccessToken, notes[`hazard-${hazard.id}`]); setHazards((current) => current.map((item) => item.id === hazard.id ? requireData(response, 'Acknowledgement') : item)) })}>{busyKey === `hazard-${hazard.id}` ? 'Saving…' : 'Acknowledge report'}</button></div>}<p className="field-hint">Acknowledgement records receipt. It does not mean the hazard has been fixed or the permit cleared.</p></Panel>) : <Panel><EmptyState icon={<FileWarning size={22} />} title="No hazard reports" detail="Confirmed reports from assigned workers will appear here." /></Panel>}</div>}
 
           {section === 'assessments' && <div className="supervisor-record-list">{assessments.length ? assessments.map((assessment) => <Panel className="supervisor-record-card" key={assessment.id}><div className="supervisor-record-header"><div><p className="eyebrow">SESSION #{assessment.session_id} · {workerName(assessment.worker_id)}</p><h2>{assessment.question}</h2></div><Badge tone={statusTone(assessment.result)}>{assessment.result} · {assessment.attempt_count}/3</Badge></div><dl className="supervisor-record-details"><div><dt>Permit</dt><dd>{permitNumber(assessment.permit_id)}</dd></div><div><dt>Worker answer</dt><dd>{assessment.worker_answer || 'No answer understood'}</dd></div><div><dt>Approved answer</dt><dd>{assessment.expected_answer}</dd></div>{assessment.acceptable_answers.length > 0 && <div><dt>Accepted variants</dt><dd>{assessment.acceptable_answers.join(' · ')}</dd></div>}<div><dt>Recorded</dt><dd>{formatTime(assessment.created_at)}</dd></div></dl><div className="supervisor-action-form"><label className="field-label" htmlFor={`assessment-note-${assessment.id}`}>Review note</label><textarea id={`assessment-note-${assessment.id}`} className="text-field text-area" value={notes[`assessment-${assessment.id}`] ?? ''} onChange={(event) => setNotes((current) => ({ ...current, [`assessment-${assessment.id}`]: event.target.value }))} maxLength={2000} placeholder="Record the review outcome or follow-up needed" /><button className="button button-primary" type="button" disabled={busyKey === `assessment-${assessment.id}`} onClick={() => void runAction(`assessment-${assessment.id}`, async () => { const response = await reviewAssessment(assessment.id, notes[`assessment-${assessment.id}`] ?? '', supervisorAccessToken); requireData(response, 'Review') })}>{busyKey === `assessment-${assessment.id}` ? 'Saving…' : 'Record review'}</button></div><p className="field-hint">Reviewing this item does not pass the assessment or authorize work. The session remains on hold.</p></Panel>) : <Panel><EmptyState icon={<BookOpenCheck size={22} />} title="No assessment reviews waiting" detail="A worker's third incorrect or unclear answer appears here for supervisor review." /></Panel>}</div>}
 
-          {section === 'sos' && <div className="supervisor-record-list">{emergencies.length ? emergencies.map((emergency) => <Panel className="supervisor-record-card" key={emergency.id}><div className="supervisor-record-header"><div><p className="eyebrow">SIMULATED EVENT #{emergency.id} · {workerName(emergency.worker_id)}</p><h2>{emergency.emergency_type.toUpperCase()}</h2></div><Badge tone={statusTone(emergency.status)}>{emergency.status}</Badge></div><dl className="supervisor-record-details"><div><dt>Permit</dt><dd>{permitNumber(emergency.permit_id)}</dd></div><div><dt>Location</dt><dd>{emergency.location || 'Not provided'}</dd></div><div><dt>Received</dt><dd>{formatTime(emergency.created_at)}</dd></div>{emergency.acknowledged_at && <div><dt>Acknowledged</dt><dd>{formatTime(emergency.acknowledged_at)}</dd></div>}</dl>{emergency.status === 'submitted' && <button className="button button-primary" type="button" disabled={busyKey === `sos-${emergency.id}`} onClick={() => void runAction(`sos-${emergency.id}`, async () => { const response = await acknowledgeEmergency(emergency.id, supervisorAccessToken); setEmergencies((current) => current.map((item) => item.id === emergency.id ? requireData(response, 'SOS acknowledgement') : item)) })}>{busyKey === `sos-${emergency.id}` ? 'Saving…' : 'Acknowledge simulated event'}</button>}<p className="field-hint">Simulation only. No emergency call or dispatch was placed.</p></Panel>) : <Panel><EmptyState icon={<LifeBuoy size={22} />} title="No simulated SOS events" detail="Worker-created demo events will appear here." /></Panel>}</div>}
+          {section === 'sos' && <div className="supervisor-record-list">{emergencies.length ? emergencies.map((emergency) => <Panel className="supervisor-record-card" key={emergency.id}><div className="supervisor-record-header"><div><p className="eyebrow">SIMULATED EVENT #{emergency.id} · {workerName(emergency.worker_id)}</p><h2>{emergency.emergency_type.toUpperCase()}</h2></div><Badge tone={statusTone(emergency.status)}>{emergency.status}</Badge></div><dl className="supervisor-record-details"><div><dt>Permit</dt><dd>{permitNumber(emergency.permit_id)}</dd></div><div><dt>Location</dt><dd>{emergency.location || 'Not provided'}</dd></div><div><dt>Received</dt><dd>{formatTime(emergency.created_at)}</dd></div>{emergency.acknowledged_at && <div><dt>Acknowledged</dt><dd>{formatTime(emergency.acknowledged_at)}</dd></div>}</dl>{emergency.status === 'submitted' && <button className="button button-primary" type="button" disabled={busyKey === `sos-${emergency.id}`} onClick={() => void runAction(`sos-${emergency.id}`, async () => { const response = await acknowledgeEmergency(emergency.id, supervisorAccessToken); setEmergencies((current) => current.map((item) => item.id === emergency.id ? requireData(response, 'SOS acknowledgement') : item)) })}>{busyKey === `sos-${emergency.id}` ? 'Saving…' : 'Acknowledge simulated event'}</button>}<p className="field-hint">Simulation only. No emergency call or dispatch was placed.</p></Panel>) : <Panel><EmptyState icon={<LifeBuoy size={22} />} title="No simulated SOS events" detail="Submitted simulated events will appear here." /></Panel>}</div>}
 
-          {section === 'briefings' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">PERMIT-LINKED SESSIONS</p><h2>{briefingSessions.length} saved session{briefingSessions.length === 1 ? '' : 's'}</h2></div><Badge tone="info">Fictional demo data</Badge></div><BriefingSessionList sessions={briefingSessions} /></Panel>}
+          {section === 'briefings' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">PERMIT-LINKED SESSIONS</p><h2>{briefingSessions.length} saved session{briefingSessions.length === 1 ? '' : 's'}</h2></div><Badge tone="info">Saved records</Badge></div><BriefingSessionList sessions={briefingSessions} /></Panel>}
 
           {section === 'instructions' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">ASSIGNED TASK CONTENT</p><h2>{instructions.length} version{instructions.length === 1 ? '' : 's'}</h2></div><Badge tone="warning">Approval gated</Badge></div>{instructions.length ? <div className="supervisor-record-list">{instructions.map((instruction) => <article className="instruction-record" key={instruction.id}><div className="supervisor-record-header"><div><p className="eyebrow">{instruction.language.toUpperCase()} · VERSION {instruction.version}</p><h2>{instruction.title}</h2></div><Badge tone={statusTone(instruction.approval_status)}>{instruction.approval_status}</Badge></div><p>{instruction.task_type}</p><div className="instruction-record-content">{instruction.content}</div><small>{instruction.questions.length} question{instruction.questions.length === 1 ? '' : 's'} · created {formatTime(instruction.created_at)}</small></article>)}</div> : <EmptyState icon={<ScrollText size={22} />} title="No instructions available" detail="Versioned content for assigned workers will appear here." />}<div className="supervisor-safety-note"><ShieldAlert size={17} /><span>Draft or approved content is not shown to workers. Only published, supervisor-approved versions can start a briefing.</span></div></Panel>}
 
           {section === 'audit' && <Panel className="table-panel"><div className="panel-heading"><div><p className="eyebrow">ASSIGNED WORKER ACTIVITY</p><h2>{auditEntries.length} recent entries</h2></div><Badge tone="info">Audit log</Badge></div>{auditEntries.length ? <div className="table-scroll"><table className="data-table"><thead><tr><th>Time</th><th>Actor</th><th>Action</th><th>Record</th><th>Details</th></tr></thead><tbody>{auditEntries.map((entry) => <tr key={entry.id}><td data-label="Time">{formatTime(entry.created_at)}</td><td data-label="Actor">{entry.user_id === null ? 'System' : entry.user_id === supervisorRecordId ? supervisorName : workerName(entry.user_id)}</td><td data-label="Action">{entry.action.replaceAll('_', ' ')}</td><td data-label="Record">{entry.entity_type}{entry.entity_id ? ` #${entry.entity_id}` : ''}</td><td data-label="Details">{Object.keys(entry.details).length ? JSON.stringify(entry.details) : '—'}</td></tr>)}</tbody></table></div> : <EmptyState icon={<Activity size={22} />} title="No audit entries yet" detail="Workflow and supervisor actions will appear here after they are recorded." />}</Panel>}
         </>
       )}
-      <div className="supervisor-safety-note"><ShieldAlert size={17} /><span>All records are synthetic. The console does not contact emergency services, clear permits, or authorize work.</span></div>
+      <div className="supervisor-safety-note"><ShieldAlert size={17} /><span>SOS events are simulations. The console does not contact emergency services, clear permits, or authorize work.</span></div>
     </div>
   )
 }

@@ -46,7 +46,7 @@ _COMMANDS: dict[str, dict[Language, tuple[str, ...]]] = {
 
 _MESSAGES: dict[Language, dict[str, str]] = {
     "en": {
-        "raise_sos": "SOS request recognized. This app only creates a simulated demo alert. For an actual emergency, follow site procedures immediately.",
+        "raise_sos": "SOS request recognized. This app only creates a simulated alert. For an actual emergency, follow site procedures immediately.",
         "report_hazard": "Hazard report request recognized. Review the suggested fields; nothing has been submitted.",
         "explain_simply": "No separately approved simpler explanation is available. Ask the supervisor; this app will not invent safety instructions.",
         "repeat_instruction": "Repeat request recognized. Only the currently approved, published instruction may be repeated.",

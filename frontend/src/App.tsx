@@ -21,13 +21,13 @@ import {
 } from './pages/supervisor/SupervisorPages'
 
 function RequireWorker() {
-  const { workerId } = useWorkflow()
-  return workerId ? <Outlet /> : <Navigate to="/worker/login" replace />
+  const { workerAccessToken } = useWorkflow()
+  return workerAccessToken ? <Outlet /> : <Navigate to="/worker/login" replace />
 }
 
 function RequirePermit() {
-  const { permitId } = useWorkflow()
-  return permitId ? <Outlet /> : <Navigate to="/worker/permit" replace />
+  const { permitId, permitRecordId } = useWorkflow()
+  return permitId && permitRecordId !== null ? <Outlet /> : <Navigate to="/worker/permit" replace />
 }
 
 function RequireLanguage() {
@@ -36,8 +36,8 @@ function RequireLanguage() {
 }
 
 function RequireSupervisor() {
-  const { supervisorAuthenticated } = useWorkflow()
-  return supervisorAuthenticated ? <Outlet /> : <Navigate to="/supervisor/login" replace />
+  const { supervisorAccessToken } = useWorkflow()
+  return supervisorAccessToken ? <Outlet /> : <Navigate to="/supervisor/login" replace />
 }
 
 export default function App() {
@@ -48,8 +48,8 @@ export default function App() {
       <Route element={<WorkerLayout />}>
         <Route path="worker/voice-diagnostics" element={<VoiceDiagnosticsPage />} />
         <Route path="worker/login" element={<WorkerLoginPage />} />
-        <Route path="worker/sos" element={<WorkerSosPage />} />
         <Route element={<RequireWorker />}>
+          <Route path="worker/sos" element={<WorkerSosPage />} />
           <Route path="worker/permit" element={<PermitPage />} />
           <Route element={<RequirePermit />}>
             <Route path="worker/language" element={<LanguagePage />} />

@@ -1,6 +1,6 @@
 # Phase 5 — Multilingual safety intelligence
 
-**Status:** Implemented with deterministic rules for the fictional demo. This layer classifies requests and suggests hazard fields; it does not decide whether work is safe.
+**Status:** Implemented with deterministic rules. This layer classifies requests and suggests hazard fields; it does not decide whether work is safe.
 
 ## Supported interaction
 

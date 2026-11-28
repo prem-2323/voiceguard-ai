@@ -30,7 +30,7 @@ def system(monkeypatch, tmp_path) -> Iterator[dict[str, object]]:
 
     Base.metadata.create_all(engine)
     test_sessions = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-    password_hash = hash_password("demo123")
+    password_hash = hash_password("test-password-123")
     with test_sessions() as db:
         worker = User(name="Worker One", worker_id="WRK-TEST-1", password_hash=password_hash,
                       role=UserRole.WORKER, preferred_language="en", is_active=True)
@@ -76,8 +76,6 @@ def system(monkeypatch, tmp_path) -> Iterator[dict[str, object]]:
         "supervisor": create_access_token(user_id=ids["supervisor"], role="supervisor"),
         "other_supervisor": create_access_token(user_id=ids["other_supervisor"], role="supervisor"),
     }
-    print("tokens done")
-
     with TestClient(app) as client:
         yield {"client": client, "ids": ids, "tokens": tokens, "sessions": test_sessions}
 

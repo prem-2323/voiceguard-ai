@@ -4,7 +4,7 @@ Phase 6 connects worker identity, assigned permits, published instructions, and 
 
 ## Worker flow
 
-1. The worker signs in with the demo worker account (`WRK-1001` / `demo123`). The backend returns a role-scoped access token; a backend outage can still show the clearly labeled local preview.
+1. The worker signs in with a site-provisioned account. The backend returns a role-scoped access token; if the backend is unavailable, sign-in fails and no local preview workflow is offered.
 2. The permit screen requests permits assigned to that worker. The API returns only active permits whose validity window includes the current time.
 3. The worker selects a language and opens the briefing for the chosen permit.
 4. The app first looks for that worker's saved briefing for the permit and language. If one exists, it resumes the exact published instruction version attached to the session. Otherwise, the app loads the latest matching published instruction.
@@ -23,7 +23,7 @@ Workers receive instruction questions without expected answers. No sample safety
 
 ## Verification
 
-Run the frontend production build and Python compile/OpenAPI checks from the repository root using the commands below. The demo still depends on a supervisor publishing task instructions before a briefing can start.
+Run the frontend production build and Python compile/OpenAPI checks from the repository root using the commands below. A worker briefing depends on a supervisor publishing reviewed task instructions before it can start.
 
 ```powershell
 cd frontend

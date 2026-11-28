@@ -23,7 +23,7 @@ export default function WelcomePage() {
         <PwaInstallButton />
         <span className="welcome-status">
           {apiReady ? <Wifi size={15} /> : apiReady === false ? <WifiOff size={15} /> : <span className="status-spinner" />}
-          {apiReady === null ? 'Checking services' : apiReady ? 'Services connected' : 'Offline preview'}
+          {apiReady === null ? 'Checking services' : apiReady ? 'Services connected' : 'API unavailable · sign-in disabled'}
         </span>
       </header>
 
@@ -31,7 +31,7 @@ export default function WelcomePage() {
         <section className="welcome-copy">
           <div className="eyebrow"><ShieldCheck size={16} /> SAFETY STARTS WITH BEING HEARD</div>
           <h1>Clear guidance.<br /><span>Confident work.</span></h1>
-          <p>Voice-first safety support designed for industrial teams across languages. Choose your workspace to begin the demo.</p>
+          <p>Voice-first safety support designed for industrial teams across languages. Choose your workspace to sign in.</p>
           <div className="welcome-proof"><span className="proof-icon"><HardHat size={17} /></span><span>Instructions stay tied to reviewed site content.</span></div>
         </section>
 
@@ -39,7 +39,7 @@ export default function WelcomePage() {
           <div className="role-picker-heading">
             <p className="eyebrow">GET STARTED</p>
             <h2 id="role-title">Choose your workspace</h2>
-            <p>Use a fictional account to explore the interface.</p>
+            <p>Use an account issued by your site supervisor.</p>
           </div>
           <Link to="/worker/login" className="role-card worker-role">
             <span className="role-icon"><HardHat size={22} /></span>
@@ -48,10 +48,10 @@ export default function WelcomePage() {
           </Link>
           <Link to="/supervisor/login" className="role-card supervisor-role">
             <span className="role-icon"><ShieldCheck size={22} /></span>
-            <span className="role-text"><strong>Supervisor</strong><span>Monitor reports, reviews, and demo activity</span></span>
+            <span className="role-text"><strong>Supervisor</strong><span>Manage assigned workers, reports, and reviews</span></span>
             <ArrowRight size={19} className="role-arrow" />
           </Link>
-          <p className="demo-note"><span className="environment-dot" /> DEMO ENVIRONMENT · SYNTHETIC DATA ONLY</p>
+          <p className="demo-note"><span className="environment-dot" /> No sample worker, permit, or safety records are loaded.</p>
           <Link className="voice-diagnostics-link" to="/worker/voice-diagnostics"><Mic size={14} /> Check browser voice support</Link>
         </section>
       </main>

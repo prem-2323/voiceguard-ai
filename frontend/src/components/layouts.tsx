@@ -60,10 +60,10 @@ export function WorkerLayout() {
           <NavLink key={to} to={to} className={({ isActive }) => `worker-nav-link ${isActive ? 'active' : ''}`}>
             <Icon size={17} />{label}
           </NavLink>
-        )) : <span className="worker-nav-hint">Voice-first safety support · Demo environment</span>}
+        )) : <span className="worker-nav-hint">Sign in to see assigned work</span>}
       </nav>
       <main className="worker-content"><Outlet /></main>
-      <footer className="worker-footer"><span>VoiceGuard AI · Demo environment</span><span>Follow site procedures in an actual emergency.</span></footer>
+      <footer className="worker-footer"><span>VoiceGuard AI · Worker workspace</span><span>Follow site procedures in an actual emergency.</span></footer>
     </div>
   )
 }
@@ -84,15 +84,15 @@ export function SupervisorLayout() {
           ))}
         </nav>
         <div className="sidebar-bottom">
-          <div className="supervisor-avatar">{(supervisorName || 'DS').slice(0, 2).toUpperCase()}</div>
-          <div><strong>{supervisorName || 'Demo Supervisor'}</strong><span>{supervisorWorkerId || 'Demo account'}</span></div>
+          <div className="supervisor-avatar">{(supervisorName || 'SU').slice(0, 2).toUpperCase()}</div>
+          <div><strong>{supervisorName || 'Supervisor'}</strong><span>{supervisorWorkerId || 'Account not loaded'}</span></div>
         </div>
       </aside>
       <div className="supervisor-main">
         <header className="supervisor-topbar">
           <div className="mobile-brand"><Brand /></div>
           <PwaInstallButton />
-          <span className="demo-banner"><span className="environment-dot" /> Preview data · not live</span>
+          <span className="demo-banner">Site records</span>
           <button className="topbar-exit" type="button" onClick={() => setSupervisorAuthenticated(false)}>Sign out</button>
         </header>
         <main className="supervisor-content"><Outlet /></main>

@@ -12,7 +12,7 @@ The assessment uses only the questions and answer variants attached to the worke
 
 Assessment answers, outcome, attempt count, question version, and time are persisted and audited. The client reloads prior answers so the worker can resume. Session and question access is scoped to the authenticated worker; supervisors can query assigned workers' assessment records.
 
-No question or expected answer is seeded. A supervisor must create, approve, and publish an instruction with reviewed questions before the assessment is available. This deterministic comparison is a demo check against approved variants and does not certify a worker's fitness or authorization to work.
+No question or expected answer is seeded. A supervisor must create, approve, and publish an instruction with reviewed questions before the assessment is available. This deterministic comparison checks an answer against approved variants; it does not certify a worker's fitness or authorization to work.
 
 ## API behavior
 

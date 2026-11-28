@@ -34,7 +34,7 @@ import {
   fetchPublishedInstructions,
   fetchWorkerPermits,
   interpretVoice,
-  loginDemo,
+  login,
   saveBriefingProgress,
   submitAssessmentAnswer,
   startBriefing,
@@ -59,10 +59,9 @@ function createIdempotencyKey() {
 
 export function WorkerLoginPage() {
   const navigate = useNavigate()
-  const { workerId: savedId, workerName: savedName, setWorker } = useWorkflow()
-  const [workerId, setWorkerId] = useState(savedId || 'WRK-1001')
-  const [workerName, setWorkerName] = useState(savedName || 'Prem Demo Worker')
-  const [password, setPassword] = useState('demo123')
+  const { workerId: savedId, setWorker } = useWorkflow()
+  const [workerId, setWorkerId] = useState(savedId || '')
+  const [password, setPassword] = useState('')
   const [formError, setFormError] = useState('')
   const [signingIn, setSigningIn] = useState(false)
 
@@ -71,35 +70,31 @@ export function WorkerLoginPage() {
     setFormError('')
     setSigningIn(true)
     try {
-      const response = await loginDemo(workerId.trim(), password)
-      if (!response.success || !response.data) throw new Error('The demo login did not return an account.')
+      const response = await login(workerId.trim(), password)
+      if (!response.success || !response.data) throw new Error('Sign-in did not return an account.')
       setWorker(response.data.user.worker_id, response.data.user.name, response.data.access_token)
+      navigate('/worker/permit')
     } catch (error) {
-      if (error instanceof ApiError && error.status === 401) {
-        setFormError('Check the demo worker ID and password, then try again.')
-        setSigningIn(false)
-        return
-      }
-      setWorker(workerId.trim(), workerName.trim())
+      setFormError(error instanceof ApiError && error.status === 401
+        ? 'Worker ID or password is incorrect.'
+        : error instanceof ApiError ? error.message : 'The account could not be verified. Try again.')
+    } finally {
+      setSigningIn(false)
     }
-    navigate('/worker/permit')
-    setSigningIn(false)
   }
 
   return (
     <div className="narrow-page">
       <StepLabel step={1} total={7} label="Worker identification" />
-      <PageHeading eyebrow="WORKER ACCESS" title="Welcome back." description="Sign in with the fictional worker profile to preview the safety journey." />
+      <PageHeading eyebrow="WORKER ACCESS" title="Welcome back." description="Sign in with the worker account issued by your site supervisor." />
       <Panel className="form-panel">
-        <div className="panel-topline"><span className="panel-icon"><CircleHelp size={19} /></span><Badge tone="info">Demo login</Badge></div>
+        <div className="panel-topline"><span className="panel-icon"><CircleHelp size={19} /></span><Badge tone="info">Worker sign in</Badge></div>
         <form className="stack-form" onSubmit={handleSubmit}>
           <label className="field-label" htmlFor="worker-id">Worker ID</label>
           <input id="worker-id" className="text-field" value={workerId} onChange={(event) => setWorkerId(event.target.value)} required autoComplete="username" />
-          <label className="field-label" htmlFor="worker-name">Display name</label>
-          <input id="worker-name" className="text-field" value={workerName} onChange={(event) => setWorkerName(event.target.value)} required />
-          <label className="field-label" htmlFor="worker-password">Demo password</label>
+          <label className="field-label" htmlFor="worker-password">Password</label>
           <input id="worker-password" className="text-field" type="password" value={password} onChange={(event) => setPassword(event.target.value)} required autoComplete="current-password" />
-          <p className="field-hint">Use the fictional demo account. Browser voice can run locally; Whisper needs a signed-in backend.</p>
+          <p className="field-hint">Your assigned permits and records are loaded from the site backend.</p>
           {formError && <p className="form-error" role="alert">{formError}</p>}
           <button className="button button-primary button-full" type="submit" disabled={signingIn}>{signingIn ? 'Signing in…' : 'Continue'} <ArrowRight size={17} /></button>
         </form>
@@ -113,14 +108,11 @@ export function PermitPage() {
   const navigate = useNavigate()
   const { permitId, workerAccessToken, workerId: savedWorkerId, workerName: savedName, setPermit } = useWorkflow()
   const [permits, setPermits] = useState<WorkerPermit[]>([])
-  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'offline' | 'error'>('loading')
+  const [loadState, setLoadState] = useState<'loading' | 'ready' | 'error'>('loading')
 
   useEffect(() => {
     let mounted = true
-    if (!workerAccessToken) {
-      setLoadState('offline')
-      return () => { mounted = false }
-    }
+    if (!workerAccessToken) return () => { mounted = false }
     setLoadState('loading')
     void fetchWorkerPermits(workerAccessToken)
       .then((response) => {
@@ -141,12 +133,14 @@ export function PermitPage() {
     navigate('/worker/language')
   }
 
+  if (!workerAccessToken) return <Navigate to="/worker/login" replace />
+
   return (
     <div className="narrow-page">
       <StepLabel step={2} total={7} label="Select permit" />
-      <PageHeading eyebrow="YOUR ACTIVE WORK" title="Choose a permit." description="Only permits assigned to your demo worker appear here." />
+      <PageHeading eyebrow="YOUR ACTIVE WORK" title="Choose a permit." description="Only active permits assigned to your account appear here." />
       {loadState === 'loading' && <Panel><p className="field-hint">Loading active permits assigned to this worker…</p></Panel>}
-      {loadState === 'ready' && permits.length === 0 && <Panel><p className="field-hint">No active permits are assigned to this demo worker.</p></Panel>}
+      {loadState === 'ready' && permits.length === 0 && <Panel><p className="field-hint">No active permits are assigned to your account. Contact your site supervisor.</p></Panel>}
       {loadState === 'ready' && permits.map((permit) => (
         <button key={permit.id} className={`permit-card ${permitId === permit.permit_number ? 'selected' : ''}`} onClick={() => choosePermit(permit.permit_number, permit.id, permit.task_type, permit.work_location)} type="button">
           <div className="permit-card-top"><Badge tone="success">Active</Badge><span className="permit-number">{permit.permit_number}</span></div>
@@ -155,18 +149,7 @@ export function PermitPage() {
           <span className="permit-select"><span>Select this permit</span><ArrowRight size={17} /></span>
         </button>
       ))}
-      {(loadState === 'offline' || loadState === 'error') && (
-        <>
-          {loadState === 'error' && <p className="form-error" role="alert">The backend could not load permits. You can continue with the local demo preview; briefing progress will not be saved.</p>}
-          <button className={`permit-card ${permitId === 'PTW-1001' ? 'selected' : ''}`} onClick={() => choosePermit('PTW-1001', null, 'Equipment Maintenance', 'Pump House 04')} type="button">
-            <div className="permit-card-top"><Badge tone="warning">Preview only</Badge><span className="permit-number">PTW-1001</span></div>
-            <h2>Equipment Maintenance</h2>
-            <div className="permit-details"><span>Location</span><strong>Pump House 04</strong><span>Worker</span><strong>WRK-1001 · Prem Demo Worker</strong></div>
-            <span className="permit-select"><span>Continue in local preview</span><ArrowRight size={17} /></span>
-          </button>
-          {loadState === 'offline' && <p className="privacy-note"><ShieldAlert size={15} /> Demo permit preview only · not valid for work and not connected to a saved briefing.</p>}
-        </>
-      )}
+      {loadState === 'error' && <p className="form-error" role="alert">The backend could not load assigned permits. Check your connection and retry.</p>}
       <Link to="/worker/login" className="back-link"><ArrowLeft size={16} /> Change worker</Link>
     </div>
   )
@@ -198,7 +181,7 @@ export function LanguagePage() {
 }
 
 export function WorkerHomePage() {
-  const { workerName, workerId, workerAccessToken, permitId, permitTaskType, permitLocation, language, reportPreviewed } = useWorkflow()
+  const { workerName, workerId, workerAccessToken, permitId, permitTaskType, permitLocation, language } = useWorkflow()
   const [hazardReports, setHazardReports] = useState<HazardReport[]>([])
   const [hazardStatusError, setHazardStatusError] = useState('')
   const firstName = workerName.split(' ')[0] || 'Worker'
@@ -234,11 +217,11 @@ export function WorkerHomePage() {
 
       <Panel className="active-permit-panel">
         <div className="active-permit-icon"><ClipboardCheck size={20} /></div>
-        <div className="active-permit-copy"><span>ACTIVE DEMO PERMIT</span><strong>{permitId || 'PTW-1001'} · {permitTaskType || 'Equipment Maintenance'}</strong><small>{permitLocation || 'Pump House 04'}</small></div>
+        <div className="active-permit-copy"><span>ACTIVE PERMIT</span><strong>{permitId} · {permitTaskType}</strong><small>{permitLocation}</small></div>
         <Badge tone="success">Active</Badge>
       </Panel>
 
-      <div className="journey-heading"><div><p className="eyebrow">YOUR CHECKLIST</p><h2>Before work begins</h2></div><span className="checklist-count">{reportPreviewed ? '1 of 3' : '0 of 3'} steps previewed</span></div>
+      <div className="journey-heading"><div><p className="eyebrow">YOUR CHECKLIST</p><h2>Before work begins</h2></div></div>
       <div className="journey-cards">
         <Link to="/worker/briefing" className="journey-card">
           <span className="journey-card-icon"><BookOpenCheck size={21} /></span><span className="journey-card-copy"><strong>Safety briefing</strong><small>Read the approved instructions for this task.</small></span><ArrowRight size={18} className="journey-arrow" />
@@ -510,7 +493,7 @@ export function AssessmentPage() {
         <Badge tone={assessmentComplete ? 'success' : supervisorReview ? 'warning' : 'info'}>{assessmentComplete ? 'Assessment complete' : supervisorReview ? 'Supervisor review required' : 'Approved question check'}</Badge>
         <div className="assessment-metadata"><span>Selected language</span><strong>{languageOptions.find((item) => item.code === language)?.label}</strong>{briefing && <><span>Questions passed</span><strong>{completedCount} of {questions.length}</strong></>}</div>
         {loadState === 'loading' && <p role="status">Loading the saved briefing and assessment progress…</p>}
-        {loadState === 'preview' && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>Sign in and select an assigned permit first.</strong><p>Assessment questions are shown only from a saved, published briefing. Offline preview cannot submit or save answers.</p></div></div>}
+        {loadState === 'preview' && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>Sign in and select an assigned permit first.</strong><p>Assessment questions are available only from a saved, published briefing. No local or unsaved assessment is available.</p></div></div>}
         {loadState === 'noBriefing' && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>No saved briefing is available.</strong><p>Open the assigned permit’s safety briefing, read the approved instruction, and mark it reviewed before starting this check.</p></div></div>}
         {loadState === 'error' && <p className="form-error" role="alert">The saved briefing or assessment progress could not be loaded. Check the backend connection and try again.</p>}
         {loadState === 'ready' && briefing && briefing.briefing.current_step < 100 && <div className="approval-notice"><ShieldAlert size={19} /><div><strong>Review the instruction before the assessment.</strong><p>Return to the briefing and mark it reviewed. Your saved reading progress is still available.</p></div></div>}
@@ -663,11 +646,10 @@ export function HazardReportPage() {
 
 export function HazardConfirmationPage() {
   const navigate = useNavigate()
-  const { hazardDraft, language, workerId, workerAccessToken, permitId, permitRecordId, updateHazardDraft, setReportPreviewed } = useWorkflow()
+  const { hazardDraft, language, workerId, workerAccessToken, permitId, permitRecordId, updateHazardDraft } = useWorkflow()
   const [confirmed, setConfirmed] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [submissionError, setSubmissionError] = useState('')
-  const [previewComplete, setPreviewComplete] = useState(false)
   const [submittedHazard, setSubmittedHazard] = useState<HazardReport | null>(null)
   if (!hazardDraft.category || !hazardDraft.location || !hazardDraft.description) return <Navigate to="/worker/hazard" replace />
 
@@ -686,12 +668,7 @@ export function HazardConfirmationPage() {
       : `Hazard report. Category: ${categoryLabel}. Location: ${hazardDraft.location}. Description: ${hazardDraft.description}.`
 
   async function confirmReport() {
-    if (!confirmed || submitting || submittedHazard || previewComplete) return
-    if (!workerAccessToken || permitRecordId === null) {
-      setPreviewComplete(true)
-      setReportPreviewed(true)
-      return
-    }
+    if (!confirmed || submitting || submittedHazard || !workerAccessToken || permitRecordId === null) return
     const idempotencyKey = hazardDraft.idempotencyKey || createIdempotencyKey()
     if (!hazardDraft.idempotencyKey) updateHazardDraft({ idempotencyKey })
     setSubmissionError('')
@@ -707,7 +684,6 @@ export function HazardConfirmationPage() {
       }, workerAccessToken, idempotencyKey)
       if (!response.success || !response.data) throw new Error('The server did not confirm that the report was saved.')
       setSubmittedHazard(response.data)
-      setReportPreviewed(true)
     } catch (error) {
       setSubmissionError(error instanceof ApiError
         ? `${error.message} Your draft is still here. Retry to safely check whether it was saved.`
@@ -722,22 +698,21 @@ export function HazardConfirmationPage() {
       <StepLabel step={7} total={7} label="Confirm details" />
       <PageHeading eyebrow="REVIEW BEFORE SUBMITTING" title="Does this look right?" description="Check the category and location before the report is sent." />
       <Panel className="confirmation-panel">
-        <div className="confirmation-title"><span className="confirm-icon"><CheckCircle2 size={21} /></span><div><strong>{submittedHazard ? `Hazard report #${submittedHazard.id}` : 'Hazard report draft'}</strong><span>Permit {permitId || 'PTW-1001'} · Worker {workerId || 'WRK-1001'}</span></div><Badge tone={submittedHazard ? 'success' : 'warning'}>{submittedHazard ? `Saved · ${submittedHazard.status}` : 'Awaiting confirmation'}</Badge></div>
+        <div className="confirmation-title"><span className="confirm-icon"><CheckCircle2 size={21} /></span><div><strong>{submittedHazard ? `Hazard report #${submittedHazard.id}` : 'Hazard report draft'}</strong><span>Permit {permitId} · Worker {workerId}</span></div><Badge tone={submittedHazard ? 'success' : 'warning'}>{submittedHazard ? `Saved · ${submittedHazard.status}` : 'Awaiting confirmation'}</Badge></div>
         <dl className="confirmation-list"><div><dt>Category</dt><dd>{categoryLabel}</dd></div><div><dt>Location</dt><dd>{hazardDraft.location}</dd></div><div><dt>Description</dt><dd>{hazardDraft.description}</dd></div><div><dt>Voice transcript</dt><dd>{hazardDraft.transcript || 'No voice transcript · entered as text'}</dd></div></dl>
         <VoicePlayback text={readbackText} locale={voiceLocale} />
-        {!submittedHazard && !previewComplete && <label className="transcript-confirmation"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I reviewed the transcript and report details. They match what I want to report.</span></label>}
+        {!submittedHazard && <label className="transcript-confirmation"><input type="checkbox" checked={confirmed} onChange={(event) => setConfirmed(event.target.checked)} /><span>I reviewed the transcript and report details. They match what I want to report.</span></label>}
         {submittedHazard && <div className="inline-note"><CheckCircle2 size={17} /><span>The server saved this report with status “{submittedHazard.status}”. It is now available to the assigned supervisor.</span></div>}
-        {previewComplete && <div className="preview-warning"><ShieldAlert size={17} /><span>Local preview only. No backend session or assigned permit was available, so this report was not submitted or saved.</span></div>}
-        {!workerAccessToken || permitRecordId === null ? !previewComplete && <div className="preview-warning"><ShieldAlert size={17} /><span>Sign in through the backend and select an assigned permit to submit this report. You can complete a local preview, but it will not be saved.</span></div> : !submittedHazard && <div className="privacy-note"><ShieldAlert size={15} /> The report is sent only after confirmation. A successful server response is required before it is marked submitted.</div>}
+        {!submittedHazard && <div className="privacy-note"><ShieldAlert size={15} /> The report is sent only after confirmation. A successful server response is required before it is marked submitted.</div>}
         {submissionError && <p className="form-error" role="alert">{submissionError}</p>}
       </Panel>
-      <div className="action-row"><Link className="button button-secondary" to="/worker/hazard"><ArrowLeft size={16} /> {submittedHazard || previewComplete ? 'Report another' : 'Edit details'}</Link>{submittedHazard || previewComplete ? <button className="button button-primary" type="button" onClick={() => navigate('/worker/home')}>Return to worker home <ArrowRight size={17} /></button> : <button className="button button-primary" type="button" disabled={!confirmed || submitting} onClick={() => void confirmReport()}>{submitting ? 'Submitting…' : !workerAccessToken || permitRecordId === null ? 'Complete local preview' : 'Confirm & submit report'} <Check size={17} /></button>}</div>
+      <div className="action-row"><Link className="button button-secondary" to="/worker/hazard"><ArrowLeft size={16} /> {submittedHazard ? 'Report another' : 'Edit details'}</Link>{submittedHazard ? <button className="button button-primary" type="button" onClick={() => navigate('/worker/home')}>Return to worker home <ArrowRight size={17} /></button> : <button className="button button-primary" type="button" disabled={!confirmed || submitting} onClick={() => void confirmReport()}>{submitting ? 'Submitting…' : 'Confirm & submit report'} <Check size={17} /></button>}</div>
     </div>
   )
 }
 
 export function WorkerSosPage() {
-  const { workerId, workerAccessToken, permitRecordId, permitLocation, sosPreviewed, setSosPreviewed } = useWorkflow()
+  const { workerId, workerAccessToken, permitRecordId, permitLocation } = useWorkflow()
   const [records, setRecords] = useState<EmergencyRecord[]>([])
   const [loading, setLoading] = useState(false)
   const [submitting, setSubmitting] = useState(false)
@@ -765,12 +740,7 @@ export function WorkerSosPage() {
   }, [refresh, workerAccessToken])
 
   async function submitSimulatedSos() {
-    if (!workerId) return
-    if (!workerAccessToken) {
-      setSosPreviewed(true)
-      setSavedMessage('Local preview only. No simulated event was sent or stored.')
-      return
-    }
+    if (!workerId || !workerAccessToken) return
 
     setSubmitting(true)
     setSubmitError('')
@@ -787,7 +757,6 @@ export function WorkerSosPage() {
       if (!response.success || !response.data) throw new Error('The backend did not confirm the simulated SOS.')
       sessionStorage.removeItem(storageKey)
       setSavedMessage(`Simulated event #${response.data.id} saved for supervisor review.`)
-      setSosPreviewed(true)
       await refresh()
     } catch (cause) {
       setSubmitError(cause instanceof ApiError ? cause.message : 'Could not confirm the SOS with the backend. Retry when connected; the retry will not create a duplicate event.')
@@ -798,21 +767,20 @@ export function WorkerSosPage() {
 
   return (
     <div className="narrow-page sos-page">
-      <PageHeading eyebrow="EMERGENCY SUPPORT" title="Simulated SOS." description="This demo event is recorded for the assigned supervisor; it does not contact responders." action={workerAccessToken ? <Badge tone={connectionState === 'live' ? 'success' : 'info'}>{connectionState === 'live' ? 'Live status' : connectionState === 'polling' ? 'Refreshing' : connectionState === 'connecting' ? 'Connecting' : 'Offline'}</Badge> : undefined} />
+      <PageHeading eyebrow="EMERGENCY SUPPORT" title="Simulated SOS." description="A submitted simulated event is saved for the assigned supervisor; it does not contact responders." action={<Badge tone={connectionState === 'live' ? 'success' : 'info'}>{connectionState === 'live' ? 'Live status' : connectionState === 'polling' ? 'Refreshing' : connectionState === 'connecting' ? 'Connecting' : 'Offline'}</Badge>} />
       <Panel className="sos-panel">
         <div className="sos-emblem"><LifeBuoy size={34} /></div>
         <Badge tone="danger">Simulation only</Badge>
-        <h2>{sosPreviewed ? 'Demo SOS event recorded.' : 'Use site emergency procedures now.'}</h2>
+        <h2>Use site emergency procedures now.</h2>
         <p>This prototype does not contact emergency services or site responders. For an actual emergency, follow your site's emergency procedure immediately.</p>
-        {!workerId && <p className="form-error">Sign in to preview an SOS linked to a demo worker.</p>}
         {submitError && <p className="form-error" role="alert">{submitError}</p>}
         {savedMessage && <div className="inline-note" role="status"><CheckCircle2 size={17} /><span>{savedMessage}</span></div>}
-        <button className="button button-danger button-full" type="button" disabled={!workerId || submitting} onClick={() => void submitSimulatedSos()}>
-          <ShieldAlert size={18} />{submitting ? 'Saving simulated event…' : workerAccessToken ? 'Send simulated SOS' : 'Preview only · offline'}
+        <button className="button button-danger button-full" type="button" disabled={submitting} onClick={() => void submitSimulatedSos()}>
+          <ShieldAlert size={18} />{submitting ? 'Saving simulated event…' : 'Send simulated SOS'}
         </button>
       </Panel>
       {workerAccessToken && <Panel className="worker-status-panel sos-status-panel"><div className="journey-heading"><div><p className="eyebrow">SUPERVISOR FOLLOW-UP</p><h2>Simulated event status</h2></div><Badge tone={connectionState === 'live' ? 'success' : connectionState === 'polling' ? 'warning' : 'info'}>{connectionState === 'live' ? 'Live' : connectionState === 'polling' ? 'Refreshing' : connectionState === 'connecting' ? 'Connecting' : 'Offline'}</Badge></div>{loadError && <p className="form-error" role="alert">{loadError}</p>}{loading ? <p className="field-hint">Loading saved events…</p> : records.length === 0 ? <p className="field-hint">No simulated events have been confirmed for this worker.</p> : <div className="worker-report-list">{records.map((record) => <div className="worker-report-row" key={record.id}><div><strong>Simulated event #{record.id} · {record.location || 'Location not provided'}</strong><small>Saved · {new Date(record.created_at).toLocaleString()}</small>{record.acknowledged_at && <small>Supervisor acknowledgement · {new Date(record.acknowledged_at).toLocaleString()}</small>}</div><Badge tone={record.status === 'acknowledged' ? 'success' : record.status === 'closed' ? 'neutral' : 'warning'}>{record.status}</Badge></div>)}</div>}<p className="field-hint">A supervisor acknowledgement records receipt only; it is not an emergency dispatch.</p></Panel>}
-      <Link className="back-link" to={workerId ? '/worker/home' : '/worker/login'}><ArrowLeft size={16} /> Return to worker journey</Link>
+      <Link className="back-link" to="/worker/home"><ArrowLeft size={16} /> Return to worker journey</Link>
     </div>
   )
 }

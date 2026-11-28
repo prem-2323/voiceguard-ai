@@ -2,11 +2,14 @@ import sqlite3
 from collections.abc import Generator
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, select
 from sqlalchemy.engine import URL, make_url
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from app.core.config import BACKEND_DIR, settings
+
+LEGACY_SAMPLE_ACCOUNT_IDS = ("WRK-1001", "SUP-1001")
+LEGACY_SAMPLE_PERMIT_NUMBERS = ("PTW-1001",)
 
 
 def _database_url() -> URL:
@@ -49,10 +52,21 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Create the MVP schema and seed fictional demo identities and permit."""
+    """Create the schema without inserting worker, permit, or safety records."""
     import app.models  # noqa: F401 - registers model metadata
+    from app.models import Permit, User
 
     Base.metadata.create_all(bind=engine)
-    from app.services.seed import seed_demo_data
-
-    seed_demo_data()
+    with SessionLocal() as db:
+        legacy_accounts = list(
+            db.scalars(select(User.worker_id).where(User.worker_id.in_(LEGACY_SAMPLE_ACCOUNT_IDS)))
+        )
+        legacy_permits = list(
+            db.scalars(select(Permit.permit_number).where(Permit.permit_number.in_(LEGACY_SAMPLE_PERMIT_NUMBERS)))
+        )
+    if legacy_accounts or legacy_permits:
+        existing_records = sorted(legacy_accounts + legacy_permits)
+        raise RuntimeError(
+            "Remove the retired sample records from this database before startup: "
+            f"{', '.join(existing_records)}. No records were deleted automatically."
+        )

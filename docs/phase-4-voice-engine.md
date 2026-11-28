@@ -1,6 +1,6 @@
 # Phase 4 — Hybrid voice engine
 
-**Status:** Implemented for the fictional VoiceGuard demonstration. Voice output and recognition are assistive UI capabilities; workers must review text before any critical action.
+**Status:** Browser voice adapters are implemented. Voice output and recognition are assistive UI capabilities; workers must review text before any critical action.
 
 ## Browser voice
 
@@ -11,7 +11,7 @@ The worker interface uses the browser Web Speech APIs when available:
 - Browser and device support varies. Browser speech recognition may use a browser vendor's remote service. Text entry remains available when APIs, microphone permission, a language, network access, or playback voices are unavailable.
 - A worker must review the transcript and report fields on the confirmation screen before continuing. Voice capture itself never submits a report.
 
-Worker login uses the fictional backend account when the API responds. If the API is unreachable, the screen keeps the browser-only demo journey available; the optional server transcription is then unavailable because there is no bearer session.
+Voice capture requires a verified backend login for server transcription and a configured worker account for saved workflows. If the API is unavailable, sign-in fails and no local-only workflow or fake submission is offered.
 
 ## Optional local Faster-Whisper fallback
 
@@ -20,7 +20,7 @@ The default backend does not install Faster-Whisper, download a model, or requir
 1. Install the optional Python dependency with `pip install -r backend/requirements-whisper.txt`.
 2. Place a compatible Faster-Whisper model directory on the backend machine. Set `WHISPER_MODEL_PATH` in `backend/.env` to that local directory. The backend only loads an existing directory and never resolves a remote model name.
 3. Configure `WHISPER_DEVICE` (`cpu` by default), `WHISPER_COMPUTE_TYPE` (`int8` by default), and `WHISPER_MAX_AUDIO_MB` (20 MB by default) as needed.
-4. Restart the backend and sign in with the fictional worker account. `GET /api/voice/capabilities` reports whether the optional path is available; `POST /api/voice/transcribe` accepts multipart audio plus `language=en|ta|hi`.
+4. Restart the backend and sign in with a provisioned worker account. `GET /api/voice/capabilities` reports whether the optional path is available; `POST /api/voice/transcribe` accepts multipart audio plus `language=en|ta|hi`.
 
 The route is worker-authenticated, accepts common browser audio formats, applies an upload-size cap, and writes its temporary audio under an automatically removed temporary directory. It returns only the transcript and language. No audio, transcript-derived safety decision, or model output is saved by the voice service. An empty/failed transcription returns an error so the UI can keep the report in text entry.
 

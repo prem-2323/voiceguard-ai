@@ -120,7 +120,7 @@ export default function VoiceDiagnosticsPage() {
 
   return (
     <div className="narrow-page voice-diagnostics-page">
-      <PageHeading eyebrow="DEVELOPMENT CHECK" title="Voice diagnostics" description="Check browser voice capabilities before attempting the worker demo." />
+      <PageHeading eyebrow="VOICE CHECK" title="Voice diagnostics" description="Check browser voice capabilities before using the worker workflow." />
 
       <Panel className="voice-diagnostics-panel">
         <dl className="diagnostic-facts">

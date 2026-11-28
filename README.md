@@ -1,18 +1,18 @@
 # VoiceGuard AI
 
-VoiceGuard AI is a multilingual, voice-first industrial safety workflow prototype. Its hackathon MVP uses fictional demo records and is not an operational safety or emergency dispatch system.
+VoiceGuard AI is a multilingual, voice-first industrial safety workflow application. The database starts empty: startup does not insert worker accounts, permits, or safety instructions. Use only site-provisioned records and reviewer-approved safety content. The app is not an operational safety authority or emergency dispatch system.
 
 See [the Phase 0 scope](docs/requirements-analysis.md) for the user journey, safety boundaries, and acceptance criteria.
 
 ## Docker Compose quick start
 
-With Docker Engine and the Compose v2 plugin installed, start the complete demo from the repository root:
+With Docker Engine and the Compose v2 plugin installed, start the complete application from the repository root:
 
 ```powershell
 docker compose up --build
 ```
 
-No `.env` file or paid API key is required for the basic demo. Open `http://localhost:8080`; verify the API through the frontend proxy at `http://localhost:8080/api/health`. SQLite data is stored in the named `voiceguard_data` volume and survives container restarts. See [Docker deployment details](docs/phase-12-docker-deployment.md). The GitHub Actions Docker smoke workflow is configured to build and start the Compose services, exercise the proxied API and worker-to-supervisor flow, restart the API to check persistence, and tear down its isolated CI volume; its first run is still pending.
+No `.env` file or paid API key is required for the default setup. Open `http://localhost:8080`; verify the API through the frontend proxy at `http://localhost:8080/api/health`. SQLite data is stored in the named `voiceguard_data` volume and survives container restarts. See [Docker deployment details](docs/phase-12-docker-deployment.md). The GitHub Actions Docker smoke workflow is configured to build and start the Compose services, exercise the proxied API and worker-to-supervisor flow, restart the API to check persistence, and tear down its isolated CI volume; its first run is still pending.
 
 ## Phase 1 development setup
 
@@ -40,10 +40,11 @@ In a second terminal:
 cd backend
 Copy-Item .env.example .env
 uv sync
+uv run python -m app.cli create-supervisor
 uv run uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
-The API health endpoint is `http://127.0.0.1:8000/api/health`. Interactive API documentation is at `http://127.0.0.1:8000/api/docs`. The SQLite database is created at `backend/data/voiceguard.db` on first startup.
+The CLI prompts securely for a supervisor account; passwords are not accepted on the command line. The API health endpoint is `http://127.0.0.1:8000/api/health`. Interactive API documentation is at `http://127.0.0.1:8000/api/docs`. The SQLite schema is created at `backend/data/voiceguard.db` on first startup with no user, permit, or safety-content rows.
 
 The frontend can also be started independently; its API base URL is configurable with `VITE_API_BASE_URL` (see `frontend/.env.example`). Backend settings and allowed development origins are documented in `backend/.env.example`.
 
@@ -86,7 +87,7 @@ Voice commands and hazard fields use deterministic Tamil, English, and Hindi phr
 
 ## Phase 6 worker briefing
 
-Workers can sign in with a demo account, select an assigned active permit, choose Tamil, English, or Hindi, and load the matching published instruction. Starting the briefing creates a saved session; reading progress and review status persist and can be resumed after signing in again. Repeated voice requests stay pinned to the instruction version in that session. No demo safety instruction is invented or seeded: the supervisor must approve and publish content before a worker can start a briefing. See [the Phase 6 worker flow](docs/phase-6-worker-briefing.md).
+Workers sign in with a site-provisioned account, select an assigned active permit, choose Tamil, English, or Hindi, and load the matching published instruction. Starting the briefing creates a saved session; reading progress and review status persist and can be resumed after signing in again. Repeated voice requests stay pinned to the instruction version in that session. No safety instruction is bundled or seeded: a designated reviewer must approve and publish site content before a worker can start a briefing. See [the Phase 6 worker flow](docs/phase-6-worker-briefing.md).
 
 ## Phase 7 understanding assessment
 
@@ -94,7 +95,7 @@ Workers can answer questions attached to the saved briefing by speech or text. A
 
 ## Phase 8 hazard reporting
 
-Workers can dictate or type a hazard, review and correct the suggested category, location, and description, hear a readback, then explicitly confirm submission. The report is marked submitted only after the backend persists it; retries reuse an idempotency key to avoid duplicates. Offline confirmation is labeled preview-only. See [the Phase 8 reporting flow](docs/phase-8-hazard-reporting.md).
+Workers can dictate or type a hazard, review and correct the suggested category, location, and description, hear a readback, then explicitly confirm submission. The report is marked submitted only after the backend persists it; retries reuse an idempotency key to avoid duplicates. A live backend response is required to confirm or save a report; a network failure leaves it unconfirmed. See [the Phase 8 reporting flow](docs/phase-8-hazard-reporting.md).
 
 ## Phases 9–10 supervisor updates and simulated SOS
 
@@ -102,7 +103,9 @@ The supervisor console shows records only for assigned workers. Recent activity 
 
 ## Phase 11 security and workflow checks
 
-Protected routes derive the account from a signed, expiring bearer token and enforce worker/supervisor roles and assignment scope. Supervisor review actions are audited. Production-like environments reject the built-in demo JWT secret, wildcard credentialed CORS, and non-HS256 JWT settings; demo passwords are fictional and must not be reused. Set a private random `JWT_SECRET` of at least 32 bytes and list exact trusted origins before running outside development. See [the Phase 11 security notes](docs/phase-11-security-testing.md).
+Protected routes derive the account from a signed, expiring bearer token and enforce worker/supervisor roles and assignment scope. Supervisor review actions are audited. Production-like environments reject the built-in local JWT secret, wildcard credentialed CORS, and non-HS256 JWT settings. Set a private random `JWT_SECRET` of at least 32 bytes and list exact trusted origins before running outside development. See [the Phase 11 security notes](docs/phase-11-security-testing.md).
+
+No sample records are seeded in any environment. Startup rejects a database that still contains the retired sample accounts or permit and never deletes records automatically. Review and clean an older database through an explicit, backed-up procedure. This repository does not connect to an organization's worker/permit system; do not use it operationally until the authoritative source and approved safety content are configured.
 
 Run the isolated backend authorization and workflow suite with:
 
@@ -112,33 +115,26 @@ uv sync --group dev
 uv run python -m pytest -q
 ```
 
-## Phase 12 Docker Compose demo
+## Phase 12 Docker Compose deployment
 
-Run `docker compose up --build` from the project root, then open `http://localhost:8080`. SQLite persists in a named volume. The demo starts without paid AI credentials or a downloaded speech model. See [the Docker deployment notes](docs/phase-12-docker-deployment.md).
+Run `docker compose up --build` from the project root, then open `http://localhost:8080`. SQLite persists in a named volume. The app starts empty and does not require paid AI credentials or a downloaded speech model. Create a supervisor with `docker compose exec -T api python -m app.cli create-supervisor`. Site records and approved instructions must then be provisioned through authorized workflows. See [the Docker deployment notes](docs/phase-12-docker-deployment.md).
 
-## Phase 13 final demo and submission
+## Phase 13 worker-to-supervisor walkthrough
 
-Use only these fictional accounts:
+No sample worker, supervisor, or permit accounts are bundled. Start the app, create a supervisor through the secure CLI, and provision site records before demonstrating the workflow. The API does not import an external permit system; permits created through its supervisor endpoint remain drafts and cannot be activated through an API shortcut.
 
-| Role | ID | Password |
-| --- | --- | --- |
-| Worker | `WRK-1001` | `demo123` |
-| Supervisor | `SUP-1001` | `demo123` |
+1. Start Compose with `docker compose up --build`, open `http://localhost:8080`, and verify `/api/health` is healthy.
+2. Create a supervisor with `docker compose exec -T api python -m app.cli create-supervisor`. Provision worker accounts and approved records for the installation through authorized routes.
+3. Before showing a briefing, obtain the site's active permit through its authoritative source and have the designated safety reviewer approve the exact instruction, translations, questions, and answers.
+4. In separate worker and supervisor browser profiles, sign in with provisioned accounts. Confirm the worker sees only assigned records.
+5. Test voice with a non-sensitive phrase. If recognition is unavailable, use text and identify it as text input. Review the hazard details and explicitly confirm submission.
+6. Open the saved report in the supervisor profile, inspect details, acknowledge receipt, and verify the worker sees the saved acknowledgement.
+7. Show SOS only as simulated; it never contacts emergency services. Do not present draft or unapproved safety content as site guidance.
 
-### Worker-to-supervisor demonstration
-
-1. Start Compose with `docker compose up --build`, open `http://localhost:8080`, and verify `/api/health` reports healthy.
-2. In a worker browser profile, sign in as `WRK-1001`, select assigned active permit `PTW-1001`, and choose Tamil.
-3. On the hazard screen, dictate a fictional concern only after the diagnostics screen proves the browser returned a real transcript. If not, type the concern and identify it as text input. Review and correct category, location, and description.
-4. Continue to confirmation, review the displayed transcript/details, and explicitly confirm submission. The report is submitted only after the backend responds successfully.
-5. In a separate supervisor browser profile, sign in as `SUP-1001`, open the new hazard report, inspect its details, and acknowledge receipt with a note.
-6. Return to the worker profile and verify the saved acknowledgement/status appears after refresh or live update.
-7. Show SOS only as simulated; it never contacts emergency services. Do not present briefing or assessment content until the designated safety reviewer has approved the exact instruction, translations, questions, and answers.
-
-See the [demo and submission checklist](docs/phase-13-demo-and-submission.md) and [pitch deck outline](docs/phase-13-pitch-outline.md).
+See the [release and submission checklist](docs/phase-13-demo-and-submission.md) and [pitch deck outline](docs/phase-13-pitch-outline.md).
 
 ### Release verification disclosure
 
-**Verified in this checkout:** 11 backend tests pass; frontend lint and production build pass; static PWA validation passes. The worker-to-supervisor workflow was also exercised in Brave against FastAPI and an isolated SQLite database: a worker submitted a report after explicit confirmation, a supervisor acknowledged it, and the worker saw the saved acknowledgement after signing in again. That browser report used typed text, not speech recognition.
+**Verified in this checkout:** 17 backend tests pass, including isolated login, permit-scope, hazard persistence, idempotency, supervisor acknowledgement, and audit checks. Frontend lint exits successfully with existing warnings; the TypeScript production build and PWA validation pass. Tests use disposable SQLite data and do not populate the application database.
 
 **Not verified:** Docker Compose startup and the GitHub Actions smoke workflow have not run. PWA installation/standalone launch and a real browser-offline reload have not been tested. No physical Android device was tested. Brave exposed speech recognition/synthesis APIs during diagnostics, but microphone permission stayed at `prompt`, no Tamil/English/Hindi voices were listed, and the microphone check produced no transcript; actual microphone input and audible TTS therefore remain unverified. No approved SOP content is seeded, so do not demonstrate briefing or assessment content as approved. Complete the Docker CI and manual browser/device checks before treating these gates as passed.

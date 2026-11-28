@@ -87,20 +87,20 @@ def _as_utc(value: datetime) -> datetime:
     return value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
 
 
-@router.post("/auth/demo-login", tags=["authentication"])
-def demo_login(payload: LoginRequest, db: Session = Depends(get_db)):
-    """Issue a short-lived demo JWT after checking the fictional account credentials."""
+@router.post("/auth/login", tags=["authentication"])
+def login(payload: LoginRequest, db: Session = Depends(get_db)):
+    """Issue a short-lived JWT after validating an active account's credentials."""
     statement = select(User).where(User.worker_id == payload.worker_id, User.is_active.is_(True))
     if payload.role:
         statement = statement.where(User.role == payload.role)
     user = db.scalar(statement)
     if user is None or not verify_password(payload.password, user.password_hash):
-        raise HTTPException(status_code=401, detail="Demo account or password is incorrect")
+        raise HTTPException(status_code=401, detail="Account ID or password is incorrect")
     token = create_access_token(user_id=user.id, role=user.role.value)
-    record_audit(db, actor=user, action="demo_login", entity_type="user", entity_id=user.id)
+    record_audit(db, actor=user, action="user_login", entity_type="user", entity_id=user.id)
     _commit(db)
     return success(AuthData(access_token=token, expires_in=settings.access_token_expire_minutes * 60,
-                            user=UserRead.model_validate(user)), "Signed in to the fictional demo account")
+                            user=UserRead.model_validate(user)), "Signed in")
 
 
 @router.get("/users/me", tags=["users"])
@@ -126,7 +126,7 @@ def create_worker(payload: WorkerCreate, db: Session = Depends(get_db), user: Us
     db.add(SupervisorAssignment(supervisor_id=user.id, worker_id=worker.id))
     record_audit(db, actor=user, action="worker_created", entity_type="user", entity_id=worker.id)
     _commit(db)
-    return success(UserRead.model_validate(worker), "Fictional worker created")
+    return success(UserRead.model_validate(worker), "Worker account created")
 
 
 @router.get("/workers/{worker_id}", tags=["workers"])
@@ -190,7 +190,7 @@ def update_permit_status(permit_id: int, payload: PermitStatusUpdate, db: Sessio
                          user: User = Depends(require_roles(UserRole.SUPERVISOR))):
     permit = get_scoped_permit(db, user, permit_id)
     if payload.status not in (PermitStatus.SUSPENDED, PermitStatus.CLOSED):
-        raise HTTPException(status_code=409, detail="This demo API cannot activate or clear a permit")
+        raise HTTPException(status_code=409, detail="This API cannot activate or clear a permit")
     permit.status = payload.status
     record_audit(db, actor=user, action="permit_status_changed", entity_type="permit", entity_id=permit.id,
                  details={"status": payload.status.value})
@@ -622,7 +622,7 @@ def create_sos(
                            "Existing simulated SOS returned; no duplicate event was created")
         raise HTTPException(status_code=409, detail="The simulated SOS conflicts with an existing request") from exc
     notify_worker_and_supervisors(db, user.id, "emergencies.changed")
-    return success(EmergencyRead.model_validate(record), "Simulated SOS saved for the demo supervisor; no emergency services were contacted")
+    return success(EmergencyRead.model_validate(record), "Simulated SOS saved for supervisor review; no emergency services were contacted")
 
 
 @router.get("/emergency", tags=["simulated SOS"])

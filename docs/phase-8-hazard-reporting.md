@@ -9,7 +9,7 @@ Phase 8 connects the worker's voice and text hazard draft to the authenticated h
 3. The confirmation screen reads back the report in the selected speech locale and shows the transcript plus all fields. The worker must check the confirmation box before submitting.
 4. The frontend posts the report with the selected permit and an `Idempotency-Key`. The backend derives the worker from the access token, verifies the permit is assigned and active, stores the transcript and report details, and records an audit event.
 5. The UI shows `submitted` only after receiving a persisted report record. On network uncertainty, the draft stays on screen and retry uses the same idempotency key. Editing the report or changing workers/permits clears the key so a changed report is a new submission.
-6. Without a backend session and active assigned permit, the worker may finish a clearly labeled local preview, which is not reported as saved.
+6. A backend session and active assigned permit are required before the worker can enter or confirm a report. If the backend is unavailable, sign-in or submission fails; the application does not offer a local-only report path.
 
 Hazard suggestions remain editable and do not submit anything. The confirmed report becomes visible to authorized supervisors through the existing scoped hazard listing. This prototype does not contact emergency services; for an actual emergency, workers must follow their site's emergency procedures.
 

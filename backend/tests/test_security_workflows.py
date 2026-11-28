@@ -22,12 +22,17 @@ def test_login_role_enforcement_and_assignment_boundaries(system):
     ids = system["ids"]
     tokens = system["tokens"]
 
-    wrong_role = client.post("/api/auth/demo-login", json={
-        "worker_id": "WRK-TEST-1", "password": "demo123", "role": "supervisor",
+    legacy_demo_login = client.post("/api/auth/demo-login", json={
+        "worker_id": "WRK-TEST-1", "password": "test-password-123",
+    })
+    assert legacy_demo_login.status_code == 404
+
+    wrong_role = client.post("/api/auth/login", json={
+        "worker_id": "WRK-TEST-1", "password": "test-password-123", "role": "supervisor",
     })
     assert wrong_role.status_code == 401
 
-    worker_login = client.post("/api/auth/demo-login", json={"worker_id": "WRK-TEST-1", "password": "demo123"})
+    worker_login = client.post("/api/auth/login", json={"worker_id": "WRK-TEST-1", "password": "test-password-123"})
     assert worker_login.status_code == 200
     assert "password_hash" not in worker_login.json()["data"]["user"]
 
@@ -88,11 +93,11 @@ def test_hazard_retry_review_and_worker_status_are_persisted(system):
     client = system["client"]
     ids = system["ids"]
     tokens = system["tokens"]
-    worker_login = client.post("/api/auth/demo-login", json={
-        "worker_id": "WRK-TEST-1", "password": "demo123",
+    worker_login = client.post("/api/auth/login", json={
+        "worker_id": "WRK-TEST-1", "password": "test-password-123",
     })
-    supervisor_login = client.post("/api/auth/demo-login", json={
-        "worker_id": "SUP-TEST-1", "password": "demo123",
+    supervisor_login = client.post("/api/auth/login", json={
+        "worker_id": "SUP-TEST-1", "password": "test-password-123",
     })
     assert worker_login.status_code == 200
     assert supervisor_login.status_code == 200
@@ -411,8 +416,8 @@ def test_runtime_security_configuration_rejects_unsafe_values():
 
 
 def test_password_verifier_bounds_stored_hash_parameters():
-    encoded = hash_password("demo123")
-    assert verify_password("demo123", encoded)
+    encoded = hash_password("test-password-123")
+    assert verify_password("test-password-123", encoded)
     assert not verify_password("incorrect", encoded)
     assert not verify_password("anything", "pbkdf2_sha256$999999999999$YWJj$ZGVm")
     assert not verify_password("anything", "malformed")

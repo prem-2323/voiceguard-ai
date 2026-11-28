@@ -45,7 +45,7 @@ export function VoiceCommandPanel({
     setError('')
     setResult(null)
     if (!accessToken) {
-      setError('Sign in to the demo backend to check voice commands. You can also use the visible screen controls.')
+      setError('Sign in to check voice commands. You can also use the visible screen controls.')
       return
     }
     setBusy(true)

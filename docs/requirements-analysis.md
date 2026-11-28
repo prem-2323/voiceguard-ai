@@ -2,11 +2,11 @@
 
 **Phase:** 0 — Requirement analysis and MVP scope<br>
 **Baseline date:** 27 November 2026<br>
-**Status:** Scope defined for the hackathon demonstration. Candidate safety copy requires review by the designated demonstration safety reviewer before it is loaded into the app.
+**Status:** Workflow scope is retained. The application starts without sample accounts, permits, or safety content; operational records must come from an authorized source.
 
 ## 1. Objective
 
-Build one complete, repeatable, multilingual voice-first demonstration of an industrial safety workflow. A fictional worker receives a permit-linked safety briefing, answers a short understanding check, reports a hazard by voice, and sees the supervisor's acknowledgement. A simulated SOS can be raised at any point.
+Build one complete, repeatable, multilingual voice-first industrial safety workflow. A site-provisioned worker receives a permit-linked safety briefing, answers a short understanding check, reports a hazard by voice, and sees the supervisor's acknowledgement. A simulated SOS can be raised at any point.
 
 The MVP demonstrates workflow and persistence. It is not an operational safety system, a permit-to-work authority, or an emergency dispatch service.
 
@@ -14,10 +14,10 @@ The MVP demonstrates workflow and persistence. It is not an operational safety s
 
 | Role | MVP responsibilities | Access boundary |
 | --- | --- | --- |
-| Worker | Sign in to the demo, select an assigned active permit, choose a language, complete a briefing and assessment, submit a hazard report, raise a simulated SOS, and view their own record statuses. | Can view and create records for their own worker account and assigned permits. Cannot acknowledge reports, approve instructions, or access another worker's records. |
-| Supervisor | Sign in to the demo, view worker reports and assessment items needing review, acknowledge hazard and simulated SOS records, add a note, and see the action recorded. | Supervisor actions are authorized by the backend and recorded with the supervisor identity and timestamp. |
+| Worker | Sign in with a provisioned account, select an assigned active permit, choose a language, complete a briefing and assessment, submit a hazard report, raise a simulated SOS, and view their own record statuses. | Can view and create records for their own worker account and assigned permits. Cannot acknowledge reports, approve instructions, or access another worker's records. |
+| Supervisor | Sign in with a provisioned account, view worker reports and assessment items needing review, acknowledge hazard and simulated SOS records, add a note, and see the action recorded. | Supervisor actions are authorized by the backend and recorded with the supervisor identity and timestamp. |
 
-Authentication is demo-grade. The application must label demo accounts as fictional and must not imply that this authentication is production-ready.
+The first supervisor account is created by an explicit local CLI command. No user or permit records are preloaded. The current worker-ID/password authentication is an MVP mechanism, not enterprise SSO.
 
 ## 3. Supported languages and voice fallback
 
@@ -33,7 +33,7 @@ Translations of safety instructions and assessment criteria must preserve the re
 
 ## 4. End-to-end worker journey
 
-1. The worker signs in with the fictional demo account.
+1. The worker signs in with an account provisioned for the installation.
 2. The worker selects an active permit assigned to that account. The backend verifies ownership and permit status.
 3. The worker chooses Tamil, English, or Hindi. The selected language is used for prompts and voice output where supported.
 4. The app retrieves the published safety instruction associated with the permit's task and displays and reads it aloud. The worker can ask to repeat it or request a simpler explanation. The answer must stay within the reviewed instruction; missing or ambiguous content is escalated instead of invented.
@@ -44,39 +44,25 @@ Translations of safety instructions and assessment criteria must preserve the re
 9. The worker sees the persisted `acknowledged` status without signing in again. Live updates use WebSocket with polling as a fallback.
 10. An SOS control remains available throughout the worker journey. In this MVP it creates a clearly labelled simulated event for the supervisor dashboard; it does not contact emergency services.
 
-## 5. Fictional demonstration records
+## 5. Installation data and isolated test fixtures
 
-All records below are synthetic and must be labelled as demo data in the interface.
+Application startup creates only the database schema. It does not insert accounts, assignments, permits, hazard reports, or safety instructions. A trusted operator creates a supervisor account; approved worker and permit records must be provisioned from the installation's authoritative source. This repository does not include that source integration.
 
-| Record | Demo value |
-| --- | --- |
-| Worker | `WRK-1001`, Prem Demo Worker; role `worker`; preferred language Tamil (`ta`) |
-| Worker demo password | `demo123` (demo only; never reuse for a real account) |
-| Permit | `PTW-1001`; assigned to `WRK-1001`; Equipment Maintenance; Pump House 04; active for the demonstration |
-| Supervisor | `SUP-1001`, Demo Supervisor; role `supervisor` |
-| Supervisor demo password | `demo123` (demo only; never reuse for a real account) |
-| Hazard example | “Pump four pakkathula oil leak irukku” → proposed category `oil_leak`, location `Pump 4`; worker confirmation is required |
-
-The backend, not a client-supplied worker identifier, determines which worker owns a session, permit, report, or SOS record. Seed data must not contain real worker or site information.
+Automated tests use disposable, isolated SQLite fixtures. Those test records are created only for the duration of a test and are not copied into application startup data, container images, or the public database. The backend, not a client-supplied worker identifier, determines which worker owns a session, permit, report, or SOS record.
 
 ## 6. Demonstration safety content and approval gate
 
 Safety content is controlled data, not generated advice. Each instruction and question must be linked to a task, language, version, and approval status. Only content with an explicit supervisor approval and published status can be presented as an instruction or used to score an answer. Preserve the version used by each briefing and assessment.
 
-The engineering blueprint provides these candidate demonstration strings:
-
-- **Briefing candidate (Tamil):** “வேலை தொடங்குவதற்கு முன்பு, அனுமதிக்கப்பட்ட PPE அணிந்துள்ளீர்களா என்பதை உறுதிப்படுத்துங்கள். உங்கள் பணி அனுமதியில் குறிப்பிடப்பட்டுள்ள isolation நடைமுறைகளைப் பின்பற்றுங்கள்.”
-- **Assessment candidate (English):** “What should you do if the gas alarm sounds?” Expected answer: “Stop work and follow the site emergency evacuation procedure.”
-
-These are candidate demo fixtures, not verified site procedures. The designated reviewer must approve the exact wording and any Tamil or Hindi versions before the app publishes them. Do not create missing translations or add site-specific steps by inference. Until approval, keep the candidate content marked draft and use it only in a non-operational development fixture.
+No safety instruction, translation, question, or answer is bundled with the application. The designated site safety reviewer must supply and approve exact content and language versions before publication. Do not create missing translations or add site-specific steps by inference.
 
 When content is missing, ambiguous, or not approved, the app must say it cannot provide an approved instruction and route the item to supervisor review. It must not invent gas evacuation steps, change permit isolation requirements, clear a permit, authorize hazardous work, or suppress a report.
 
 ## 7. MVP scope
 
-### Required in the demonstration
+### Required in the workflow
 
-- Fictional worker and supervisor demo login with backend role checks.
+- Site-provisioned worker and supervisor login with backend role checks; no bundled account data.
 - Permit ownership and active-status validation.
 - Tamil, English, and Hindi language selection with visible text fallback.
 - Published, versioned safety briefing and repeat/simple-explanation actions constrained to approved content.
@@ -90,12 +76,12 @@ When content is missing, ambiguous, or not approved, the app must say it cannot 
 
 ### Simulated or optional capabilities
 
-- Authentication and accounts are demonstration-only.
+- Authentication is an MVP account/password flow; enterprise identity integration is not implemented.
 - SOS is a simulation; no emergency call or dispatch integration exists.
 - Browser speech services may depend on browser support or network access. Faster-Whisper is optional and separately configured.
 - Ollama or another LLM is optional. The default intent and safety workflow uses deterministic rules and approved content.
 - WebSocket updates may fall back to polling.
-- Permit, worker, and instruction data are fictional seed data, not connected to an industrial system.
+- Permit, worker, and instruction data must be provisioned from an authoritative source; that integration is not implemented.
 
 ### Outside this MVP
 
@@ -119,7 +105,7 @@ When content is missing, ambiguous, or not approved, the app must say it cannot 
 
 Phase 0 is complete when the implementation can be checked against this defined scope. The MVP release is accepted when all of the following are demonstrated:
 
-1. A fictional worker can log in, see only their own active permit, choose one of the three supported languages, and start the permit-linked briefing.
+1. A provisioned worker can log in, see only their own active permit, choose one of the three supported languages, and start the permit-linked briefing.
 2. The briefing is the published approved version, is available as text, and can be repeated. Missing or draft instructions are not shown as approved.
 3. The assessment records the transcript, instruction/question version, result, attempt count, and routes an unresolved third attempt to supervisor review.
 4. The worker can speak a hazard, review and correct the proposed category/location/description, and confirm it before submission.
